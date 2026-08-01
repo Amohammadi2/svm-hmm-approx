@@ -2,13 +2,13 @@
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![C++ Standard](https://img.shields.io/badge/C%2B%2B-17%2B-blue.svg)
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)
 
 ## Overview
 
 This project is an end-to-end computational pipeline designed to scrape market data, estimate stochastic model parameters, and generate synthetic market data based on research-backed stochastic differential equations. 
 
-The ultimate goal of this repository is to evolve into a **single-asset strategy backtesting platform**. Rather than testing trading strategies against a single historical timeline, this platform will simulate market behavior and test strategies across thousands of synthetic, Monte Carlo-style sample paths to validate statistical robustness.
+The ultimate goal of this repository is to evolve into a **single-asset strategy backtesting platform**. Rather than testing trading strategies against a single historical timeline, this platform will simulate market behavior and test strategies across thousands of synthetic, Monte Carlo-style sample paths to validate statistical robustness but without the computational limitations imposed on standard Monte Carlo methods.
 
 ---
 
@@ -65,30 +65,27 @@ graph TD
 ```
 
 ### 1. Web-Based User Interface (React JS)
-- A dedicated React JS frontend will allow users to control the entire pipeline visually.
-- Users can trigger scraping jobs, monitor parameter estimation progress, and visualize backtesting results across multiple simulated paths.
+A dedicated React JS frontend will allow users to control the entire pipeline visually. Users can trigger scraping jobs, monitor parameter estimation progress, and visualize backtesting results across multiple simulated paths.
 
 ### 2. Asynchronous Task Processing Queue
-- **Problem:** Scraping, multi-parameter optimization, and stochastic simulation are highly CPU-intensive and blocking operations.
-- **Solution:** Introduce an async task queue (e.g., Celery with Redis or RabbitMQ) to decouple the React frontend from the backend. The web interface will submit jobs and poll for status updates, ensuring the UI remains responsive.
+Scraping, multi-parameter optimization, and stochastic simulation are highly CPU-intensive and blocking operations. So we introduce an async task queue (e.g., Celery with Redis or RabbitMQ) to decouple the React frontend from the backend. The web interface will submit jobs and poll for status updates, ensuring the UI remains responsive.
 
 ### 3. Standardized SQL Database & Data Schema
-- **Problem:** Relying on intermediate CSV files limits scalability, data integrity, and querying capabilities.
-- **Solution:** Migrate to a relational database (e.g., PostgreSQL). We will establish a standardized SQL schema to store raw scraped data, processed log returns, estimated parameters, and simulation state.
+Relying on intermediate CSV files limits scalability, data integrity, and querying capabilities. So, we have a plan to migrate to a relational database (e.g., PostgreSQL). We will establish a standardized SQL schema to store raw scraped data, processed log returns, estimated parameters, and simulation state.
 
 ### 4. Secure Plugin-Based Scraping System
-- **Problem:** Every market and financial website has a unique DOM structure, meaning a one-size-fits-all Selenium script is impossible.
-- **Solution:** Implement a plugin system allowing users to upload custom Python scraping scripts.
-- **Security Constraints:** To prevent Remote Code Execution (RCE) and unauthorized system access, user-submitted scripts will be executed in **highly restricted, ephemeral Docker containers**. These sandboxes will have dropped kernel privileges, no access to the host filesystem, and tightly whitelisted outbound network access restricted only to the target scraping URLs.
+Every market and financial website has a unique DOM structure, meaning a one-size-fits-all Selenium script is impossible. So we're gonna implement a plugin system allowing users to upload custom Python scraping scripts.
+
+To prevent Remote Code Execution (RCE) and unauthorized system access, user-submitted scripts will be executed in **highly restricted, ephemeral Docker containers**. These sandboxes will have dropped kernel privileges, no access to the host filesystem.
+
+### 5. Cross-Platform Build System For The Estimation Engine
+The estimation engine is currently written in C++17 using MSVC compiler and VS2022 as the IDE. Currently the build system is highly dependent on Windows specific tooling & ecosystem. We are planning to migrate the project to a CMake-based setup. We also need a better way to manage external C++ modules and dependencies.
+
+### 6. The Backtesting Engine
+We need a minimal event-driven backtesting engine to simulate trade strategies on multiple different market simulations. The engine doesn't need to match production-grade enterprise engines in the real world, nor does it need to account for real order execution challenges. We will allow the user to define their strategy in a python script and evaluate its performance.
 
 ---
 
 ## 🛠️ Contributing & Setup
 *(Currently in active refactoring—setup instructions will be updated as the SQL and Task Queue integrations are merged.)*
 
-### Building the C++ Engine (Legacy)
-```bash
-mkdir build && cd build
-cmake ..
-make
-```
