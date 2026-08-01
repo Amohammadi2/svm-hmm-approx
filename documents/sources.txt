@@ -1,0 +1,2 @@
+https://www.youtube.com/watch?v=3qodjHRUxAo => beautiful explanation of MCMC
+https://www.youtube.com/watch?v=fX5bYmnHqqE => Hidden Markov Models
