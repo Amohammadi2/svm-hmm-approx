@@ -81,8 +81,8 @@ To prevent Remote Code Execution (RCE) and unauthorized system access, user-subm
 ### 5. Cross-Platform Build System For The Estimation Engine
 The estimation engine is currently written in C++17 using MSVC compiler and VS2022 as the IDE. Currently the build system is highly dependent on Windows specific tooling & ecosystem. We are planning to migrate the project to a CMake-based setup. We also need a better way to manage external C++ modules and dependencies.
 
-### 6. The Backtesting Engine
-We need a minimal event-driven backtesting engine to simulate trade strategies on multiple different market simulations. The engine doesn't need to match production-grade enterprise engines in the real world, nor does it need to account for real order execution challenges. We will allow the user to define their strategy in a python script and evaluate its performance.
+### 6. VaR (Value at Risk) Calculation
+We need to implement a system that uses one-step-ahead predictive distributions to calculate the expected VaR each day and graph it on a simultaneous graph along with daily log returns. What we expect is that, given a confidence level of 95%, the daily log-returns shouldn't fall below the VaR threshold except at most 5% of the time.
 
 ---
 
