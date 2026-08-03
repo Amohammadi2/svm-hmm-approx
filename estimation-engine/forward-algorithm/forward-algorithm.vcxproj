@@ -104,6 +104,7 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)..\autodiff-1.1.2;$(SolutionDir)..\nlopt-2.11.0\src\api;$(SolutionDir)..\nlopt-2.11.0\build;$(SolutionDir)..\fast-cpp-csv-parser-master;$(SolutionDir)..\eigen-5.0.0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

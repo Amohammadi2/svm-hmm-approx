@@ -11,6 +11,7 @@
 #include <Eigen/Dense>
 #include <nlopt.hpp>
 #include <csv.h> // fast-cpp-csv-parser
+#include <omp.h>
 
 // =========================================================================
 // 1. DATA STRUCTURES
@@ -113,6 +114,7 @@ double evaluateLogPrior(const Parameters& pConstrained, const Parameters& prior_
 // 3. LOG-SPACE LIKELIHOOD APPROXIMATION
 // =========================================================================
 
+
 double LikelihoodApprox(
     int m, int std_dv_rng,
     double beta_0, double beta_1, double beta_2,
@@ -121,24 +123,31 @@ double LikelihoodApprox(
 {
     Eigen::VectorXd log_delta(m);
     Eigen::VectorXd midpoints(m);
-    double stationary_sigma = sigma_eta / std::sqrt(std::max(1e-15, 1.0 - std::pow(phi, 2)));
 
+    // Variance of the stationary distribution
+    double stationary_sigma = sigma_eta / std::sqrt(std::max(1e-15, 1.0 - std::pow(phi, 2)));
+    double b = (2.0 * std_dv_rng * sigma_eta) / m;
+    double log_b = std::log(b);
+
+    // 1. Parallelize initial grid evaluation (O(m))
+    #pragma omp parallel for schedule(static)
     for (int i = 1; i <= m; i++) {
         double midpoint = mu - std_dv_rng * sigma_eta * (1.0 - (2.0 * i - 1.0) / m);
         midpoints(i - 1) = midpoint;
         log_delta(i - 1) = log_normal_pdf(midpoint, mu, stationary_sigma);
     }
 
-    double b = (2.0 * std_dv_rng * sigma_eta) / m;
-    log_delta.array() += std::log(b);
+    log_delta.array() += log_b;
     double log_sum_delta = log_sum_exp(log_delta);
     log_delta.array() -= log_sum_delta;
 
+    // 2. Parallelize transition matrix construction (O(m^2))
     Eigen::MatrixXd log_Gamma(m, m);
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < m; i++) {
         double conditional_mean = mu + phi * (midpoints(i) - mu);
         for (int j = 0; j < m; j++) {
-            log_Gamma(i, j) = log_normal_pdf(midpoints(j), conditional_mean, sigma_eta) + std::log(b);
+            log_Gamma(i, j) = log_normal_pdf(midpoints(j), conditional_mean, sigma_eta) + log_b;
         }
         double log_row_sum = log_sum_exp(log_Gamma.row(i));
         log_Gamma.row(i).array() -= log_row_sum;
@@ -148,10 +157,16 @@ double LikelihoodApprox(
     Eigen::VectorXd log_alpha = log_delta;
     int T = static_cast<int>(y_returns.size());
 
+    // Allocate temporary vector once outside the loop to reduce memory allocations
+    Eigen::VectorXd next_log_alpha(m);
+
+    // TIME LOOP: Must remain sequential because log_alpha(t) depends on log_alpha(t-1)
     for (int t = 0; t < T; t++) {
         double y_curr = y_returns[t];
         double y_prev = (t == 0) ? 0.0 : y_returns[t - 1];
 
+        // 3. Parallelize observation log-likelihood updates across m grid points
+        #pragma omp parallel for schedule(static)
         for (int j = 0; j < m; j++) {
             double h_t = midpoints(j);
             double mean_y = beta_0 + beta_1 * y_prev + beta_2 * std::exp(h_t);
@@ -159,15 +174,18 @@ double LikelihoodApprox(
             log_alpha(j) += log_normal_pdf(y_curr, mean_y, std_dev_y);
         }
 
+        // Predictive probability normalization
         double step_log_sum = log_sum_exp(log_alpha);
         if (!std::isfinite(step_log_sum)) return -1e15;
 
         log_likelihood += step_log_sum;
         log_alpha.array() -= step_log_sum;
 
+        // 4. Parallelize transition step across grid states (O(m^2))
         if (t < T - 1) {
-            Eigen::VectorXd next_log_alpha(m);
+            #pragma omp parallel for schedule(static)
             for (int j = 0; j < m; j++) {
+                // Read-only access to log_alpha and log_Gamma.col(j) is thread-safe
                 Eigen::VectorXd log_terms = log_alpha + log_Gamma.col(j);
                 next_log_alpha(j) = log_sum_exp(log_terms);
             }
@@ -186,7 +204,7 @@ double EvaluateLogPosterior(const std::vector<double>& pUnconstrained, Data* dat
     Parameters pConstrained = transformToConstrained(pUnconstrained);
     double log_prior = evaluateLogPrior(pConstrained, data->prior_mean, data->prior_variance);
     double log_jac = evaluateLogJacobian(pUnconstrained);
-    double log_lik = LikelihoodApprox(50, 4, pConstrained.beta0, pConstrained.beta1, pConstrained.beta2,
+    double log_lik = LikelihoodApprox(100, 4, pConstrained.beta0, pConstrained.beta1, pConstrained.beta2,
         pConstrained.mu, pConstrained.phi, pConstrained.sigma_eta, data->y_returns);
     return log_prior + log_jac + log_lik;
 }
@@ -221,6 +239,9 @@ double NLLObjectiveFunc(const std::vector<double>& paramsUnconstrained, std::vec
     }
     double total_log_posterior = EvaluateLogPosterior(paramsUnconstrained, data);
 	std::cout << "NLLObjectiveFunc ran successfully: " << -total_log_posterior << std::endl;
+    std::cout << "Params: ";
+    for (double p : paramsUnconstrained) { std::cout << p << ", "; }
+    std::cout << std::endl;
     return -total_log_posterior; // Minimizing Negative Log Posterior
 }
 
@@ -268,7 +289,7 @@ Eigen::MatrixXd ComputeHessian(const std::vector<double>& x, Data* data) {
 }
 
 std::vector<double> EstimateMAP(const Parameters& initial_guess, Data& data) {
-    nlopt::opt opt(nlopt::LD_LBFGS, 6);
+    nlopt::opt opt(nlopt::LN_BOBYQA, 6);
     opt.set_min_objective(NLLObjectiveFunc, &data);
     opt.set_xtol_rel(1e-3);
     opt.set_ftol_rel(1e-3);
@@ -302,8 +323,8 @@ Parameters estimatePosteriorMean(const std::vector<double>& y_returns,
     const Eigen::MatrixXd& covariance_matrix,
     const Parameters& prior_mean,
     const Parameters& prior_variance,
-    int N_samples = 1000) {
-
+    int N_samples = 1000)
+{
     std::mt19937_64 rng(42);
 
     // Cholesky decomposition of Sigma to sample multivariate normals
@@ -322,6 +343,7 @@ Parameters estimatePosteriorMean(const std::vector<double>& y_returns,
 
     std::cout << "Starting Multivariate Importance Sampling (N = " << N_samples << ")...\n";
 
+    int valid_samples = 0;
     for (int i = 0; i < N_samples; ++i) {
         Eigen::VectorXd z(6);
         for (int k = 0; k < 6; ++k) {
@@ -334,25 +356,61 @@ Parameters estimatePosteriorMean(const std::vector<double>& y_returns,
         Parameters pConstrained_i = transformToConstrained(theta_tilde_vec);
         sampled_params[i] = pConstrained_i;
 
-        double log_lik = LikelihoodApprox(50, 4, pConstrained_i.beta0, pConstrained_i.beta1,
+        // 1. Guard against unconstrained parameter explosions before likelihood evaluation
+        if (!std::isfinite(pConstrained_i.sigma_eta) || pConstrained_i.sigma_eta <= 1e-6 ||
+            !std::isfinite(pConstrained_i.phi) || std::abs(pConstrained_i.phi) >= 0.999)
+        {
+            log_weights(i) = -1e308; // Assign virtually zero weight to invalid samples
+            continue;
+        }
+
+        double log_lik = LikelihoodApprox(100, 4, pConstrained_i.beta0, pConstrained_i.beta1,
             pConstrained_i.beta2, pConstrained_i.mu,
             pConstrained_i.phi, pConstrained_i.sigma_eta, y_returns);
+
+        // 2. Reject penalty score (-1e15) from ruining LogSumExp
+        if (log_lik <= -1e14 || !std::isfinite(log_lik)) {
+            log_weights(i) = -1e308;
+            continue;
+        }
+
         double log_prior = evaluateLogPrior(pConstrained_i, prior_mean, prior_variance);
         double log_jac = evaluateLogJacobian(theta_tilde_vec);
         double log_prop = evaluateLogProposal(theta_tilde_i, map_mean_vec, cov_inv, log_det_cov);
 
-        log_weights(i) = (log_lik + log_prior + log_jac) - log_prop;
+        double w = (log_lik + log_prior + log_jac) - log_prop;
+
+        if (std::isfinite(w)) {
+            log_weights(i) = w;
+            valid_samples++;
+        }
+        else {
+            log_weights(i) = -1e308;
+        }
+    }
+
+    if (valid_samples == 0) {
+        throw std::runtime_error("Importance Sampling failed: All sampled proposal points evaluated to invalid likelihoods!");
     }
 
     // Stable weight normalization via Log-Sum-Exp
     double log_sum_w = log_sum_exp(log_weights);
     Eigen::VectorXd norm_weights = (log_weights.array() - log_sum_w).exp();
 
+    // Diagnostic: Compute Effective Sample Size (ESS)
+    double ess = 1.0 / norm_weights.array().square().sum();
+    std::cout << "Importance Sampling complete. Valid points: " << valid_samples
+        << "/" << N_samples << " | ESS: " << ess << "\n";
+
+    // 3. Compute weighted point estimate using uniform Eigen accessor syntax ()
     Parameters point_estimate = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
     for (int i = 0; i < N_samples; ++i) {
+        // Skip zero-weight invalid proposals
+        if (norm_weights(i) <= 0.0 || !std::isfinite(norm_weights(i))) continue;
+
         point_estimate.beta0 += norm_weights(i) * sampled_params[i].beta0;
         point_estimate.beta1 += norm_weights(i) * sampled_params[i].beta1;
-        point_estimate.beta2 += norm_weights[i] * sampled_params[i].beta2;
+        point_estimate.beta2 += norm_weights(i) * sampled_params[i].beta2; // Fixed [] -> ()
         point_estimate.mu += norm_weights(i) * sampled_params[i].mu;
         point_estimate.phi += norm_weights(i) * sampled_params[i].phi;
         point_estimate.sigma_eta += norm_weights(i) * sampled_params[i].sigma_eta;
@@ -397,9 +455,12 @@ int main() {
         std::cout << "--- Starting MAP Estimation (L-BFGS) ---\n";
         std::vector<double> map_tilde_peak = EstimateMAP(initial_guess, modeling_data);
 
+       
         // Step 2: Compute Symmetric Hessian at MAP Peak
         std::cout << "\n--- Computing Finite Difference Hessian ---\n";
         Eigen::MatrixXd Hessian = ComputeHessian(map_tilde_peak, &modeling_data);
+
+        std::cout << "Final Hessian: \n" << Hessian << std::endl;
 
         // Regularize Hessian to prevent inversion failure due to numerical drift
         Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Hessian);
@@ -410,14 +471,15 @@ int main() {
         }
         Eigen::MatrixXd reg_Hessian = eigenvectors * eigenvalues.asDiagonal() * eigenvectors.transpose();
         Eigen::MatrixXd covariance_matrix = reg_Hessian.inverse();
+		std::cout << "Final Covariance Matrix (Inverse Hessian):\n" << covariance_matrix << std::endl;
 
         // Step 3: Estimate Posterior Means via Multivariate Importance Sampling
         Parameters final_theta_bayes = estimatePosteriorMean(
-            y_returns, map_tilde_peak, covariance_matrix, prior_mean, prior_variance, 500
+            y_returns, map_tilde_peak, covariance_matrix, prior_mean, prior_variance, 1000
         );
 
         // Step 4: Output Estimated Parameters
-        std::cout << std::fixed << std::setprecision(6);
+        std::cout << std::fixed << std::setprecision(10);
         std::cout << "\n--- Final Estimated Point Parameters (Posterior Means) ---\n";
         std::cout << "beta0:     " << final_theta_bayes.beta0 << "\n";
         std::cout << "beta1:     " << final_theta_bayes.beta1 << "\n";
