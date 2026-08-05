@@ -13,6 +13,16 @@
 
 #define M_PI std::acos(-1)
 
+#ifdef NDEBUG
+
+#define DOUT if (true) {} else std::cout
+
+#else
+
+#define DOUT std::cout
+
+#endif
+
 // ============================================================================
 // CONFIGURATION & ESTIMATED PARAMETERS CONSTANTS
 // ============================================================================
@@ -229,7 +239,7 @@ double brent_root_finder(const std::function<double(double)>& f, double a, doubl
 
 void ReadCSVData(std::vector<double>& y_returns) {
     try {
-        io::CSVReader<2> in("../../data-processing/gold18_history_log_returns.csv");
+        io::CSVReader<2> in("../data/gold18_history_log_returns.csv");
         in.read_header(io::ignore_extra_column, "", "Log_Return");
         double x; double ret;
         while (in.read_row(x, ret)) {
@@ -241,16 +251,57 @@ void ReadCSVData(std::vector<double>& y_returns) {
     }
 }
 
+void ReadDataSTDIN(std::vector<double>& y_returns) {
+    size_t n;
+    std::cin >> n;
+
+    y_returns.reserve(n);
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        double x;
+        if (!(std::cin >> x))
+            throw std::runtime_error("Unexpected end of input.");
+
+        y_returns.push_back(x);
+    }
+}
+
+void LoadData(std::vector<double>& y_returns) {
+#if NDEBUG
+    return ReadDataSTDIN(y_returns);
+#else
+    return ReadCSVData(y_returns);
+#endif // NDEBUG
+}
+
 // ============================================================================
 // MAIN WORKFLOW EXECUTION
 // ============================================================================
 int main() {
+
+    // Default value init
     int m = Config::M;
+    double beta_0 = Config::BETA_0;
+    double beta_1 = Config::BETA_1;
+    double beta_2 = Config::BETA_2;
     double mu = Config::MU;
     double phi = Config::PHI;
     double sigma_eta = Config::SIGMA_ETA;
     double std_dv_rng = Config::STD_DV_RNG;
     double stationary_sigma = std::sqrt((sigma_eta * sigma_eta) / (1.0 - phi * phi));
+
+#if NDEBUG
+    std::cin >> beta_0;
+    std::cin >> beta_1;
+    std::cin >> beta_2;
+    std::cin >> mu;
+    std::cin >> phi;
+    std::cin >> sigma_eta;
+    std::cin >> m;
+    std::cin >> std_dv_rng;
+#endif // NDEBUG
+
 
     // ------------------------------------------------------------------------
     // STEP 1: INITIALIZE HMM DISCRETIZATION GRID & STATIONARY DELTA
@@ -286,7 +337,7 @@ int main() {
 
     // Simulated series of daily returns y_t for T trading days
     std::vector<double> Y;
-    ReadCSVData(Y);
+    LoadData(Y);
     size_t T = Y.size();
 
     // Output Vector: Daily 5% VaR estimates
@@ -304,7 +355,7 @@ int main() {
         // Construct Observation Likelihood Matrix P(y_t)
         Eigen::VectorXd likelihoods(m);
         for (int i = 0; i < m; ++i) {
-            double cond_mean = Config::BETA_0 + Config::BETA_1 * y_prev + Config::BETA_2 * std::exp(midpoints(i));
+            double cond_mean = beta_0 + beta_1 * y_prev + beta_2 * std::exp(midpoints(i));
             double cond_scale = std::exp(midpoints(i) / 2.0);
             likelihoods(i) = student_t_pdf(y_t, cond_mean, cond_scale, Config::NU);
         }
@@ -328,7 +379,7 @@ int main() {
         auto var_objective = [&](double r_star) -> double {
             double cdf_mix = 0.0;
             for (int j = 0; j < m; ++j) {
-                double mu_next = Config::BETA_0 + Config::BETA_1 * y_t + Config::BETA_2 * std::exp(midpoints(j));
+                double mu_next = beta_0 + beta_1 * y_t + beta_2 * std::exp(midpoints(j));
                 double scale_next = std::exp(midpoints(j) / 2.0);
                 double z = (r_star - mu_next) / scale_next;
 
@@ -338,7 +389,7 @@ int main() {
             };
 
         // Solve for VaR using Root Bracketing and Brent's Algorithm
-        double init_guess = Config::BETA_0 + Config::BETA_1 * y_t - 2.0 * std::exp(mu / 2.0);
+        double init_guess = beta_0 + beta_1 * y_t - 2.0 * std::exp(mu / 2.0);
         auto bounds = bracket_root(var_objective, init_guess);
         double var_val = brent_root_finder(var_objective, bounds.first, bounds.second);
 
@@ -348,13 +399,14 @@ int main() {
     // ------------------------------------------------------------------------
     // DISPLAY RESULTS
     // ------------------------------------------------------------------------
-    std::cout << "=========================================================\n";
-    std::cout << "  Daily 5% Value at Risk (VaR) Calculation Results\n";
-    std::cout << "=========================================================\n";
+    DOUT <<  "=========================================================\n";
+    DOUT <<  "  Daily 5% Value at Risk (VaR) Calculation Results\n";
+    DOUT <<  "=========================================================\n";
     for (size_t t = 0; t < T; ++t) {
-        std::cout << "Day " << (t + 1) << " | Return y_t: "
+        DOUT <<  "Day " << (t + 1) << " | Return y_t: "
             << std::fixed << std::setprecision(4) << Y[t]
             << " | 5% VaR_{t+1}: " << daily_VaR(t) << "\n";
+        std::cout << daily_VaR(t) << std::endl; // Output VaR to stdout for external use
     }
 
     return 0;

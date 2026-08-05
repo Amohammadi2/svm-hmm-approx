@@ -17,6 +17,16 @@
 // 1. DATA STRUCTURES
 // =========================================================================
 
+#ifdef NDEBUG
+
+#define DOUT if (true) {} else std::cout
+
+#else
+
+#define DOUT std::cout
+
+#endif
+
 struct Parameters {
     double beta0;
     double beta1;
@@ -238,10 +248,10 @@ double NLLObjectiveFunc(const std::vector<double>& paramsUnconstrained, std::vec
         ComputeNumericalGradient(paramsUnconstrained, grad, data);
     }
     double total_log_posterior = EvaluateLogPosterior(paramsUnconstrained, data);
-	std::cout << "NLLObjectiveFunc ran successfully: " << -total_log_posterior << std::endl;
-    std::cout << "Params: ";
-    for (double p : paramsUnconstrained) { std::cout << p << ", "; }
-    std::cout << std::endl;
+	DOUT <<  "NLLObjectiveFunc ran successfully: " << -total_log_posterior << std::endl;
+    DOUT <<  "Params: ";
+    for (double p : paramsUnconstrained) { DOUT <<  p << ", "; }
+    DOUT <<  std::endl;
     return -total_log_posterior; // Minimizing Negative Log Posterior
 }
 
@@ -298,9 +308,9 @@ std::vector<double> EstimateMAP(const Parameters& initial_guess, Data& data) {
     std::vector<double> x = transformToUnconstrained(initial_guess);
     double min_nll;
 
-    std::cout << "Starting L-BFGS Optimization..." << std::endl;
+    DOUT <<  "Starting L-BFGS Optimization..." << std::endl;
     nlopt::result result = opt.optimize(x, min_nll);
-    std::cout << "Optimization converged (Code: " << result << "). Min NLL: " << min_nll << std::endl;
+    DOUT <<  "Optimization converged (Code: " << result << "). Min NLL: " << min_nll << std::endl;
 
     return x;
 }
@@ -341,7 +351,7 @@ Parameters estimatePosteriorMean(const std::vector<double>& y_returns,
     std::vector<Parameters> sampled_params(N_samples);
     Eigen::VectorXd log_weights(N_samples);
 
-    std::cout << "Starting Multivariate Importance Sampling (N = " << N_samples << ")...\n";
+    DOUT <<  "Starting Multivariate Importance Sampling (N = " << N_samples << ")...\n";
 
     int valid_samples = 0;
     for (int i = 0; i < N_samples; ++i) {
@@ -399,7 +409,7 @@ Parameters estimatePosteriorMean(const std::vector<double>& y_returns,
 
     // Diagnostic: Compute Effective Sample Size (ESS)
     double ess = 1.0 / norm_weights.array().square().sum();
-    std::cout << "Importance Sampling complete. Valid points: " << valid_samples
+    DOUT <<  "Importance Sampling complete. Valid points: " << valid_samples
         << "/" << N_samples << " | ESS: " << ess << "\n";
 
     // 3. Compute weighted point estimate using uniform Eigen accessor syntax ()
@@ -425,7 +435,7 @@ Parameters estimatePosteriorMean(const std::vector<double>& y_returns,
 
 void ReadCSVData(std::vector<double>& y_returns) {
     try {
-        io::CSVReader<2> in("../../data-processing/gold18_history_log_returns.csv");
+        io::CSVReader<2> in("../data/gold18_history_log_returns.csv");
         in.read_header(io::ignore_extra_column, "", "Log_Return");
         double x; double ret;
         while (in.read_row(x, ret)) {
@@ -437,10 +447,34 @@ void ReadCSVData(std::vector<double>& y_returns) {
     }
 }
 
+void ReadDataSTDIN(std::vector<double>& y_returns) {
+    size_t n;
+    std::cin >> n;
+
+    y_returns.reserve(n);
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        double x;
+        if (!(std::cin >> x))
+            throw std::runtime_error("Unexpected end of input.");
+
+        y_returns.push_back(x);
+    }
+}
+
+void LoadData(std::vector<double>& y_returns) {
+#if NDEBUG
+    return ReadDataSTDIN(y_returns);
+#else
+    return ReadCSVData(y_returns);
+#endif // NDEBUG
+}
+
 int main() {
     try {
         std::vector<double> y_returns;
-        ReadCSVData(y_returns);
+        LoadData(y_returns);
         if (y_returns.empty()) {
             throw std::runtime_error("No data loaded from CSV.");
         }
@@ -452,15 +486,15 @@ int main() {
         Data modeling_data = { y_returns, prior_mean, prior_variance };
 
         // Step 1: Estimate MAP via L-BFGS
-        std::cout << "--- Starting MAP Estimation (L-BFGS) ---\n";
+        DOUT <<  "--- Starting MAP Estimation (L-BFGS) ---\n";
         std::vector<double> map_tilde_peak = EstimateMAP(initial_guess, modeling_data);
 
        
         // Step 2: Compute Symmetric Hessian at MAP Peak
-        std::cout << "\n--- Computing Finite Difference Hessian ---\n";
+        DOUT <<  "\n--- Computing Finite Difference Hessian ---\n";
         Eigen::MatrixXd Hessian = ComputeHessian(map_tilde_peak, &modeling_data);
 
-        std::cout << "Final Hessian: \n" << Hessian << std::endl;
+        DOUT <<  "Final Hessian: \n" << Hessian << std::endl;
 
         // Regularize Hessian to prevent inversion failure due to numerical drift
         Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Hessian);
@@ -471,7 +505,7 @@ int main() {
         }
         Eigen::MatrixXd reg_Hessian = eigenvectors * eigenvalues.asDiagonal() * eigenvectors.transpose();
         Eigen::MatrixXd covariance_matrix = reg_Hessian.inverse();
-		std::cout << "Final Covariance Matrix (Inverse Hessian):\n" << covariance_matrix << std::endl;
+		DOUT <<  "Final Covariance Matrix (Inverse Hessian):\n" << covariance_matrix << std::endl;
 
         // Step 3: Estimate Posterior Means via Multivariate Importance Sampling
         Parameters final_theta_bayes = estimatePosteriorMean(
@@ -479,14 +513,21 @@ int main() {
         );
 
         // Step 4: Output Estimated Parameters
-        std::cout << std::fixed << std::setprecision(10);
-        std::cout << "\n--- Final Estimated Point Parameters (Posterior Means) ---\n";
-        std::cout << "beta0:     " << final_theta_bayes.beta0 << "\n";
-        std::cout << "beta1:     " << final_theta_bayes.beta1 << "\n";
-        std::cout << "beta2:     " << final_theta_bayes.beta2 << "\n";
-        std::cout << "mu:        " << final_theta_bayes.mu << "\n";
-        std::cout << "phi:       " << final_theta_bayes.phi << "\n";
-        std::cout << "sigma_eta: " << final_theta_bayes.sigma_eta << "\n";
+        DOUT <<  std::fixed << std::setprecision(10);
+        DOUT <<  "\n--- Final Estimated Point Parameters (Posterior Means) ---\n";
+        DOUT <<  "beta0:     " << final_theta_bayes.beta0 << "\n";
+        DOUT <<  "beta1:     " << final_theta_bayes.beta1 << "\n";
+        DOUT <<  "beta2:     " << final_theta_bayes.beta2 << "\n";
+        DOUT <<  "mu:        " << final_theta_bayes.mu << "\n";
+        DOUT <<  "phi:       " << final_theta_bayes.phi << "\n";
+        DOUT <<  "sigma_eta: " << final_theta_bayes.sigma_eta << "\n";
+
+        std::cout << final_theta_bayes.beta0 << "\n";
+        std::cout << final_theta_bayes.beta1 << "\n";
+        std::cout << final_theta_bayes.beta2 << "\n";
+        std::cout << final_theta_bayes.mu << "\n";
+        std::cout << final_theta_bayes.phi << "\n";
+        std::cout << final_theta_bayes.sigma_eta;
     }
     catch (const std::exception& e) {
         std::cerr << "Fatal Error in Execution: " << e.what() << std::endl;
