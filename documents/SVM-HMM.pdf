@@ -9697,3 +9697,378 @@ trailer
 startxref
 1808732
 %%EOF
+1 0 obj
+<</Names <</Dests <</Kids [4 0 R 5 0 R 6 0 R]
+>>
+>>
+/PageMode /UseOutlines
+/OpenAction 7 0 R
+/PageLabels <</Nums [0 <</P <FEFF0030>
+>> 1 <</S /D
+>>]
+>>
+/Metadata 981 0 R
+/Outlines 8 0 R
+/Pages 9 0 R
+/Type /Catalog
+>>
+endobj
+2 0 obj
+<</DOI (https://doi.org/10.48550/arXiv.2606.22615)
+/arXivID (https://arxiv.org/abs/2606.22615v1)
+/License (http://creativecommons.org/licenses/by-nc-nd/4.0/)
+/PTEX.Fullbanner (This is pdfTeX, Version 3.141592653-2.6-1.40.28 \(TeX Live 2025\) kpathsea version 6.4.1)
+/Title (Stochastic Volatility in Mean Models with Heavy Tails: A Fast Approximate Bayesian Inference Using Hidden Markov Models)
+/ModDate (D:20260802105014+03'30')
+/Author (Bruno E. Holtz; Carlos A. Abanto-Valle; Ricardo S. Ehlers; Gabriel Rodríguez)
+/Creator (arXiv GenPDF \(tex2pdf:a6404ea\))
+/Producer (pikepdf 8.15.1)
+>>
+endobj
+227 0 obj
+<</Annots [407 0 R 408 0 R 952 0 R 960 0 R 961 0 R 969 0 R 970 0 R 978 0 R]
+/Parent 200 0 R
+/Contents 409 0 R
+/Resources 410 0 R
+/MediaBox [0 0 612 792]
+/Type /Page
+>>
+endobj
+952 0 obj
+<</Subtype /Highlight
+/CreationDate (D:20260802084349+03'30')
+/C [1.0000 0.9180 0.0000]
+/F 4
+/T (CHAMPION)
+/M (D:20260802084349+03'30')
+/Type /Annot
+/P 227 0 R
+/QuadPoints 953 0 R
+/Rect [203.3751 682.1171 349.0900 692.6850]
+/Subj (Highlight)
+/AP <</N 957 0 R
+>>
+/Popup 960 0 R
+>>
+endobj
+953 0 obj
+[205.6920 692.6850 214.0805 692.6850 205.6920 683.0312 214.0805 683.0312 214.0940 688.7004 218.0621 688.7004 214.0940 682.1171 218.0621 682.1171 218.5640 692.6850 291.0021 692.6850 218.5640 683.0312 291.0021 683.0312 323.7300 688.7004 327.8306 688.7004 323.7300 682.1171 327.8306 682.1171 331.3510 692.4360 346.8329 692.4360 331.3510 683.0312 346.8329 683.0312]
+endobj
+957 0 obj
+<</Resources <</ProcSet [/PDF]
+/ExtGState <</R0 <</Type /ExtGState
+/BM /Multiply
+/AIS false
+>>
+>>
+/XObject <</NXForm 958 0 R
+>>
+>>
+/Subtype /Form
+/Length 25
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 0.0000 0.0000]
+/BBox [0.0000 0.0000 145.7149 10.5679]
+>>
+stream
+xœÓ2PH/æÒ÷‹pË/ÊUpÉ )
+ò
+endstream
+endobj
+958 0 obj
+<</Resources <</ProcSet [/PDF]
+/XObject <</Form 959 0 R
+>>
+>>
+/Subtype /Form
+/Length 16
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 0.0000 0.0000]
+/BBox [0.0000 0.0000 145.7149 10.5679]
+/Group <</S /Transparency
+>>
+>>
+stream
+xœÓwË/ÊUpÉ I—
+endstream
+endobj
+959 0 obj
+<</Resources <</ProcSet [/PDF]
+>>
+/Subtype /Form
+/Length 335
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 -203.3751 -682.1171]
+/BBox [203.3751 682.1171 349.0900 692.6850]
+>>
+stream
+xœ“;NCAEû·ŠYåïØ^O$h ¡aûx^P'ªp¤ûúNğüIqÿğM>^„‰"–ãó`4˜Éˆ4f ÷ââFÈÅDƒ4G§‰ 30ctG2ÌĞ,z;˜0ĞĞ:+>AÒõä—¥Ñ6±9®ınÇË "*‘š¯ˆK‘’©¥` rœ¶"ƒQñ<Õ3‹ÓØ¨Uä±9Qü1 'cDç+bÂÔâ²[m›ã±ßo"^-–Âf­gO-ÖMYsî7½h¿ÿåØZÌµ£?·˜õ(Ò÷m›ãŸ-
+¸Ô£½EáúÇŠÏ~Ó>î¿9Z‹Â!hé{‹ÂYçİÒh›ØjÑÂ½^…@êÇE²·¸ÖãÏó¦!¡£Óº?y„âèjKë}¸®ˆ:k½úêì¼"ê²¬n6K£mbsì-~	ÖßJ
+endstream
+endobj
+960 0 obj
+<</Parent 952 0 R
+/Subtype /Popup
+/Open false
+/Type /Annot
+/P 227 0 R
+/Rect [612.0000 580.6850 784.0000 692.6850]
+>>
+endobj
+961 0 obj
+<</Subtype /Highlight
+/CreationDate (D:20260802084355+03'30')
+/C [1.0000 0.9180 0.0000]
+/F 4
+/T (CHAMPION)
+/M (D:20260802084355+03'30')
+/Type /Annot
+/P 227 0 R
+/QuadPoints 962 0 R
+/Rect [146.1689 623.9761 409.1213 647.8690]
+/Subj (Highlight)
+/AP <</N 966 0 R
+>>
+/Popup 969 0 R
+>>
+endobj
+962 0 obj
+[190.4790 647.8690 211.0418 647.8690 190.4790 638.4642 211.0418 638.4642 213.2720 644.1334 217.2401 644.1334 213.2720 637.5501 217.2401 637.5501 148.4260 641.1290 281.9980 641.1290 148.4260 631.7242 281.9980 631.7242 295.4720 647.8690 316.3337 647.8690 295.4720 638.4642 316.3337 638.4642 328.7550 641.1290 392.2267 641.1290 328.7550 631.7242 392.2267 631.7242 395.3860 637.3934 399.4866 637.3934 395.3860 630.8101 399.4866 630.8101 400.2390 641.1290 406.8641 641.1290 400.2390 631.7242 406.8641 631.7242 190.4790 634.2949 208.8301 634.2949 190.4790 624.8903 208.8301 624.8903 213.2720 630.5593 217.2401 630.5593 213.2720 623.9761 217.2401 623.9761 295.4720 634.2949 314.1220 634.2949 295.4720 624.8903 314.1220 624.8903]
+endobj
+966 0 obj
+<</Resources <</ProcSet [/PDF]
+/ExtGState <</R0 <</Type /ExtGState
+/BM /Multiply
+/AIS false
+>>
+>>
+/XObject <</NXForm 967 0 R
+>>
+>>
+/Subtype /Form
+/Length 25
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 0.0000 0.0000]
+/BBox [0.0000 0.0000 262.9524 23.8929]
+>>
+stream
+xœÓ2PH/æÒ÷‹pË/ÊUpÉ )
+ò
+endstream
+endobj
+967 0 obj
+<</Resources <</ProcSet [/PDF]
+/XObject <</Form 968 0 R
+>>
+>>
+/Subtype /Form
+/Length 16
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 0.0000 0.0000]
+/BBox [0.0000 0.0000 262.9524 23.8929]
+/Group <</S /Transparency
+>>
+>>
+stream
+xœÓwË/ÊUpÉ I—
+endstream
+endobj
+968 0 obj
+<</Resources <</ProcSet [/PDF]
+>>
+/Subtype /Form
+/Length 607
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 -146.1689 -623.9761]
+/BBox [146.1689 623.9761 409.1213 647.8690]
+>>
+stream
+xœU9’Û@Ìõ
+¾ …kÀ{¶ÊNäÄ‰¿ï&WKb˜ØZER×¨tãâã³1•äç—òûçƒidDíÏCŠÉ£˜}›–äÓÕlûõLR•Ş¦3…ŠÍØtĞIõ­sxPÎ¬‘ÛÇCEˆá«ãOàFZYneAÏˆãÊïãñc“”è">%Ä¡Ì ¶ 1X„QâN=KYw¼HŒ¹xë¨+^›¥lÃoÍ¦%©ãÑñ½Ä¤ÄóÈ•åB{Ä‹ãÊïJ¼\tH££ğcš@;W?\ôI23§ 7ª¸ØQd’Ğ´s¸hôG‰)T•,³ã(1tÜYôŒØ9®üŞ*Qk É¤r¬ªgû¥m:zµXãèj2iw.njğk£†Î² gÄÎñ^£%š&ìç›‹¦“¼
+wMôÔ¿st­“;CÆê¢•“§¥×ÂÒÑ+bãxÏÅcc/XÊ½˜Rhí%Â¯Ä×Ú‹Q2,“¥;:ğÚ,æ¶pŞÕ£ÄBÒs¾æü…?ÎHoNü¡³,h‹Ø8ÎüŞr“L
+:ñ›‹»™¼jÚĞSÿÎÑ]tèNGÃ­.:c›¨hÜXzFìß˜E¹uÊb=\ü:û|ixV]G¡4ƒ¼ËáÁÎ(/=6*#c9ş‰??I†jv–^;Ç•ß·†B»˜~;:°¬'±`E™Ïåh ™Æ(Ììíh\øz4:KC[Ä‹ãÊï-û6ì.~íÎ9MÚôï[¹¹hâ{ëUÜ\<¶$\¯ÅÅ^;Çêâ_Œ¿
+endstream
+endobj
+969 0 obj
+<</Parent 961 0 R
+/Subtype /Popup
+/Open false
+/Type /Annot
+/P 227 0 R
+/Rect [612.0000 535.8690 784.0000 647.8690]
+>>
+endobj
+970 0 obj
+<</Subtype /Highlight
+/CreationDate (D:20260802084404+03'30')
+/C [1.0000 0.9180 0.0000]
+/F 4
+/T (CHAMPION)
+/M (D:20260802084404+03'30')
+/Type /Annot
+/P 227 0 R
+/QuadPoints 971 0 R
+/Rect [210.4609 443.2166 356.5798 455.4225]
+/Subj (Highlight)
+/AP <</N 975 0 R
+>>
+/Popup 978 0 R
+>>
+endobj
+971 0 obj
+[212.7180 453.6890 234.8250 453.6890 212.7180 444.2842 234.8250 444.2842 240.7070 449.9533 244.6751 449.9533 240.7070 443.3701 244.6751 443.3701 245.1760 453.6890 253.9730 453.6890 245.1760 444.2842 253.9730 444.2842 255.6510 449.9533 260.3513 449.9533 255.6510 443.3701 260.3513 443.3701 261.9270 453.6890 298.7289 453.6890 261.9270 444.2842 298.7289 444.2842 306.2930 451.1668 325.6592 451.1668 306.2930 443.2166 325.6592 443.2166 326.1580 453.6890 342.2376 453.6890 326.1580 444.2842 342.2376 444.2842 342.2376 455.4225 353.8540 455.4225 342.2376 444.0651 353.8540 444.0651]
+endobj
+975 0 obj
+<</Resources <</ProcSet [/PDF]
+/ExtGState <</R0 <</Type /ExtGState
+/BM /Multiply
+/AIS false
+>>
+>>
+/XObject <</NXForm 976 0 R
+>>
+>>
+/Subtype /Form
+/Length 25
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 0.0000 0.0000]
+/BBox [0.0000 0.0000 146.1189 12.2058]
+>>
+stream
+xœÓ2PH/æÒ÷‹pË/ÊUpÉ )
+ò
+endstream
+endobj
+976 0 obj
+<</Resources <</ProcSet [/PDF]
+/XObject <</Form 977 0 R
+>>
+>>
+/Subtype /Form
+/Length 16
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 0.0000 0.0000]
+/BBox [0.0000 0.0000 146.1189 12.2058]
+/Group <</S /Transparency
+>>
+>>
+stream
+xœÓwË/ÊUpÉ I—
+endstream
+endobj
+977 0 obj
+<</Resources <</ProcSet [/PDF]
+>>
+/Subtype /Form
+/Length 492
+/Type /XObject
+/Filter /FlateDecode
+/FormType 1
+/Matrix [1.0000 0.0000 0.0000 1.0000 -210.4609 -443.2166]
+/BBox [210.4609 443.2166 356.5798 455.4225]
+>>
+stream
+xœ”Kr1D÷:O€ÂÿsW%{“M®PJe@yáÈ*-fº8h4I¼ÿBQ>ş*¿~Ş,#ÊÖïCì¼T8••ÖGëê˜^­;˜’„­©
+¥ĞšğÌr[o7…dC:ô÷Ö0™ÔÊPGÅÁ¸ú{»ıXô…E%êªÛ¢""5B@ú)c[”â@Æ;ºÑcjöjËu0ª×ŠHm‹ı¡‡aÏrèm±°†”¡^'ã_ÿcñJQ(¬ÊRTŞ_¦Ó1Ó¡ùÆ‘b¿TpE<¥hmFÊPGÅÁønŠfàFŸS4B¦c¦S½æ?3EG#ÑzJÑ	JH¸ÊT¯Š“ñÍ7¸·Ş§³hî•çL/uÌ0+!8ÓèLQ°»Jëÿ¤LuTŒS¬.¸SìíQ\õ˜“»j[Tìe{ƒô>ì“Ò{åP«NFß“Ñ-7¢ç×mïtk÷4ô¶ÈæÁ!eªWÅÁ¸ú{)Ea²¨Â3Eá>½)ì¸ß¦:æ?3Eé“Û÷¤+>¥Ø…´4BÊPGÅÁx-ÅÀJ‰mñD ºl‹}wQúÃbîõS5/÷¤£>–Ê}ÿÜ-¶¯4EÑ©·Å¾Xz"‰yP†:*ÆÕß¶øÿ"eh
+endstream
+endobj
+978 0 obj
+<</Parent 970 0 R
+/Subtype /Popup
+/Open false
+/Type /Annot
+/P 227 0 R
+/Rect [612.0000 343.4225 784.0000 455.4225]
+>>
+endobj
+981 0 obj
+<</Subtype /XML
+/Length 2335
+/Type /Metadata
+>>
+stream
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta x:xmptk="Nitro PDF Pro 14 (14.42.0.34)" xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/" xmlns:pdfaProperty="http://www.aiim.org/pdfa/ns/property#" xmlns:pdfaSchema="http://www.aiim.org/pdfa/ns/schema#" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/" xmlns:pdfx="http://ns.adobe.com/pdfx/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Stochastic Volatility in Mean Models with Heavy Tails: A Fast Approximate Bayesian Inference Using Hidden Markov Models</rdf:li>
+</rdf:Alt>
+</dc:title>
+<dc:creator><rdf:Seq><rdf:li>Bruno E. Holtz; Carlos A. Abanto-Valle; Ricardo S. Ehlers; Gabriel RodrÃ­guez</rdf:li>
+</rdf:Seq>
+</dc:creator>
+<pdfx:DOI>https://doi.org/10.48550/arXiv.2606.22615</pdfx:DOI>
+<pdfx:License>http://creativecommons.org/licenses/by-nc-nd/4.0/</pdfx:License>
+<pdfx:arXivID>https://arxiv.org/abs/2606.22615v1</pdfx:arXivID>
+<pdfx:PTEX.Fullbanner>This is pdfTeX, Version 3.141592653-2.6-1.40.28 (TeX Live 2025) kpathsea version 6.4.1</pdfx:PTEX.Fullbanner>
+<xmp:ModifyDate>2026-08-02T10:50:14+03:30</xmp:ModifyDate>
+<xmp:MetadataDate>2026-08-02T10:50:14+03:30</xmp:MetadataDate>
+</rdf:Description>
+<rdf:Description rdf:about=""/>
+<rdf:Description dc:publisher="arXiv" rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"/>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="arXiv GenPDF (tex2pdf:a6404ea)"/>
+<rdf:Description rdf:about=""><dc:rights xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Alt><rdf:li xml:lang="x-default">http://creativecommons.org/licenses/by-nc-nd/4.0/</rdf:li>
+</rdf:Alt>
+</dc:rights>
+</rdf:Description>
+<rdf:Description dc:identifier="https://arxiv.org/abs/2606.22615v1" rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"/>
+<rdf:Description rdf:about=""/>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"/>
+<rdf:Description pdf:Producer="pikepdf 8.15.1" rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/"/>
+</rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="r"?>
+endstream
+endobj
+xref
+1 2
+0001810058 00000 n
+0001810306 00000 n
+227 1
+0001810924 00000 n
+952 2
+0001811118 00000 n
+0001811432 00000 n
+957 6
+0001811814 00000 n
+0001812195 00000 n
+0001812524 00000 n
+0001813123 00000 n
+0001813266 00000 n
+0001813580 00000 n
+966 6
+0001814322 00000 n
+0001814703 00000 n
+0001815032 00000 n
+0001815903 00000 n
+0001816046 00000 n
+0001816360 00000 n
+975 4
+0001816958 00000 n
+0001817339 00000 n
+0001817668 00000 n
+0001818424 00000 n
+981 1
+0001818567 00000 n
+trailer
+<</Root 1 0 R
+/Prev 1808732
+/Size 982
+/ID [<1A797F181F235BC2A3020E974D8569E0> <A5B7FD74C9C9C31D17ADA529051CC352>]
+/Info 2 0 R
+>>
+startxref
+1820994
+%%EOF
