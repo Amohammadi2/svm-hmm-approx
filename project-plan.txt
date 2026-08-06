@@ -70,7 +70,7 @@ Target Goal : Implement in C++ / R / Python & apply to your country's market dat
       for your home country (e.g., from Yahoo Finance).
   [X] Clean the data by converting raw closing prices into daily log-returns:
       - r_t = ln(Price_t / Price_{t-1})
-  [ ] Feed your country's real-world dataset directly into your C++ pipeline.
-  [ ] Plot the extracted hidden volatility process (h_t) to map out your 
+  [X] Feed your country's real-world dataset directly into your C++ pipeline.
+  [X] Plot the extracted hidden volatility process (h_t) to map out your 
       country's economic market volatility trends across past decades!
 ===============================================================================
