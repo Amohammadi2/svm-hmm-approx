@@ -1,14 +1,39 @@
-import pandas as pd
-import matplotlib.pyplot as plt
+from typing import List, Optional
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-from typing import List
+import pandas as pd
 
-def create_var_violation_plot(dates: pd.Series[pd.Timestamp], log_returns: npt.ArrayLike, var_estimates: List[float]):
 
-    # Safety check
-    assert len(dates) == len(log_returns) == len(var_estimates)
+def create_var_violation_plot(
+    dates: pd.Series,
+    log_returns: npt.ArrayLike,
+    var_estimates: List[float],
+    shift_steps: int = 1,  # Positive = Shift Forward (+1)
+) -> plt.Figure:
+    # -----------------------------
+    # Data Preparation & Alignment
+    # -----------------------------
+    # Convert inputs to pandas Series to ensure consistent indexing
+    dates_s = pd.Series(dates).reset_index(drop=True)
+    returns_s = pd.Series(log_returns).reset_index(drop=True)
+    var_s = pd.Series(var_estimates).reset_index(drop=True)
+
+    # Safety check on raw lengths
+    assert (
+        len(dates_s) == len(returns_s) == len(var_s)
+    ), "All inputs must have the same length."
+
+    # Apply the shift (e.g., shift(1) moves forecast made at t to t+1)
+    if shift_steps != 0:
+        var_s = var_s.shift(shift_steps)
+
+    # Filter out NaNs created by shifting so matplotlib doesn't misbehave
+    valid_mask = ~var_s.isna() & ~returns_s.isna()
+    dates_plot = dates_s[valid_mask]
+    returns_plot = returns_s[valid_mask]
+    var_plot = var_s[valid_mask]
 
     # -----------------------------
     # Figure
@@ -17,8 +42,8 @@ def create_var_violation_plot(dates: pd.Series[pd.Timestamp], log_returns: npt.A
 
     # Actual returns
     ax.plot(
-        dates,
-        log_returns,
+        dates_plot,
+        returns_plot,
         color="#1f77b4",
         linewidth=1.2,
         label="Log Returns",
@@ -27,21 +52,23 @@ def create_var_violation_plot(dates: pd.Series[pd.Timestamp], log_returns: npt.A
 
     # VaR estimate
     ax.plot(
-        dates,
-        var_estimates,
+        dates_plot,
+        var_plot,
         color="#d62728",
         linewidth=2.2,
         linestyle="--",
-        label="VaR Estimate",
+        label=f"VaR Estimate (Shifted +{shift_steps})"
+        if shift_steps
+        else "VaR Estimate",
         zorder=4,
     )
 
-    # Highlight VaR violations
-    violations = log_returns < var_estimates
+    # Highlight VaR violations (Actual return strictly below VaR threshold)
+    violations = returns_plot < var_plot
 
     ax.scatter(
-        dates[violations],
-        log_returns[violations],
+        dates_plot[violations],
+        returns_plot[violations],
         color="crimson",
         s=28,
         edgecolors="white",
@@ -52,9 +79,9 @@ def create_var_violation_plot(dates: pd.Series[pd.Timestamp], log_returns: npt.A
 
     # Shade the danger region
     ax.fill_between(
-        dates,
-        var_estimates,
-        log_returns,
+        dates_plot,
+        var_plot,
+        returns_plot,
         where=violations,
         interpolate=True,
         color="crimson",
@@ -83,10 +110,9 @@ def create_var_violation_plot(dates: pd.Series[pd.Timestamp], log_returns: npt.A
     ax.set_xlabel("Date", fontsize=13)
     ax.set_ylabel("Log Return", fontsize=13)
 
-    # Nice date formatting
+    # Date formatting
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)
-
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
 
@@ -111,8 +137,7 @@ def create_var_violation_plot(dates: pd.Series[pd.Timestamp], log_returns: npt.A
         fontsize=11,
     )
 
-    # Slight margins
     ax.margins(x=0.01)
-
     plt.tight_layout()
-    return plt
+
+    return fig

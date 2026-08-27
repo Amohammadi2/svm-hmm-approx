@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List, Optional
 
 @dataclass
 class ModelParameters:
@@ -54,3 +55,48 @@ class ModelParameters:
             self.phi,
             self.sigma_eta,
         ]
+
+
+@dataclass(frozen=True, slots=True)
+class SVMParameters:
+    """Parameters of the SVM model.
+
+    Parameters
+    ----------
+    beta0:
+        Intercept of the conditional mean equation.
+    beta1:
+        AR(1) coefficient of the return process.
+    beta2:
+        Volatility-in-mean coefficient.
+    mu:
+        Unconditional mean of the latent log-volatility process.
+    phi:
+        Persistence parameter of the latent log-volatility process.
+    sigma:
+        Innovation standard deviation of the latent log-volatility process.
+    nu:
+        Tail parameter for SVM-t, SVM-S, and SVM-VG.
+        Must be omitted for SVM-N.
+    """
+
+    beta0: float
+    beta1: float
+    beta2: float
+    mu: float
+    phi: float
+    sigma_eta: float
+    nu: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if not abs(self.beta1) < 1.0:
+            raise ValueError("beta1 must satisfy |beta1| < 1.")
+
+        if not abs(self.phi) < 1.0:
+            raise ValueError("phi must satisfy |phi| < 1.")
+
+        if self.sigma_eta <= 0.0:
+            raise ValueError("sigma must be positive.")
+
+        if self.nu is not None and self.nu <= 0.0:
+            raise ValueError("nu must be positive.")

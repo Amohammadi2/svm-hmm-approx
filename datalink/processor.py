@@ -11,5 +11,6 @@ def calculate_tgju_log_returns(df: pd.DataFrame):
     res['Date'] = df['Date_Miladi']
     res['Final_F'] = df['Final'].apply(lambda x: np.nan if x == '-' else float(x.replace(',', '')))
     res["Log_Return"] = np.log(res["Final_F"] / res["Final_F"].shift(1)) * 100
+    res = res.reset_index(drop=True)
 
     return res

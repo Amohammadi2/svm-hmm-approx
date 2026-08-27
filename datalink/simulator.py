@@ -1,29 +1,40 @@
 import numpy as np
 import pandas as pd
-from utils.datastructs import ModelParameters
+from utils.datastructs import SVMParameters
 
-def generate_synthetic_log_returns(params: ModelParameters, y_0=0, n=300):
-    h_1 = np.random.normal(params.mu, (params.sigma_eta**2)/(1-params.phi**2))
+def generate_synthetic_log_returns(params: SVMParameters, y_0=0.0, n=300):
+    # 1. Draw initial stationary log-volatility h_1 ~ N(mu, sigma_eta^2 / (1 - phi^2))
+    stationary_std = params.sigma_eta / np.sqrt(1.0 - params.phi**2)
+    h_current = np.random.normal(loc=params.mu, scale=stationary_std)
+    
+    y_current = y_0
+    y_returns = np.empty(n)
+    h_states = np.empty(n)
+    
+    # 2. Draw random innovations
+    eps = np.random.standard_t(df=10, size=n) 
+    eta = np.random.normal(loc=0.0, scale=1.0, size=n)
 
-    n_steps = n
-    y_array = np.empty(n_steps + 1)
-    h_array = np.empty(n_steps + 1)
-
-    y_array[0] = y_0
-    h_array[0] = h_1
-
-    eps = np.random.standard_t(df=3, size=n_steps)
-    eta = np.random.normal(size=n_steps)
-
-    for t in range(1, n_steps + 1):
-        h_array[t] = params.mu + params.phi * (h_array[t-1] - params.mu) + params.sigma_eta * eta[t-1]
-        y_array[t] = (
+    # 3. Simulate process t = 1, ..., n
+    for t in range(n):
+        # Store current log-volatility h_t
+        h_states[t] = h_current
+        
+        # Calculate return y_t = beta_0 + beta_1 * y_{t-1} + beta_2 * exp(h_t) + exp(h_t / 2) * eps_t
+        exp_h = np.exp(h_current)
+        y_t = (
             params.beta_0
-            + params.beta_1 * y_array[t-1]
-            + params.beta_2 * np.exp(h_array[t-1])
-            + np.exp(h_array[t-1] / 2) * eps[t-1]
+            + params.beta_1 * y_current
+            + params.beta_2 * exp_h
+            + np.sqrt(exp_h) * eps[t]
         )
+        y_returns[t] = y_t
+        
+        # Transition to next log-volatility h_{t+1} = mu + phi * (h_t - mu) + sigma_eta * eta_t
+        h_current = params.mu + params.phi * (h_current - params.mu) + params.sigma_eta * eta[t]
+        y_current = y_t
 
     return pd.DataFrame({
-        'Log_Return': y_array
+        'Log_Return': y_returns,
+        'Log_Volatility': h_states  # Optional: useful for debugging/validation
     })

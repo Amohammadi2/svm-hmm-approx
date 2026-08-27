@@ -1,537 +1,629 @@
 #define _CRT_SECURE_NO_WARNINGS
+
 #include <iostream>
 #include <vector>
+#include <string>
+#include <sstream>
 #include <cmath>
-#include <numeric>
+#include <memory>
 #include <random>
-#include <algorithm>
-#include <stdexcept>
+#include <chrono>
 #include <iomanip>
+#include <stdexcept>
+#include <functional>
+#include <map>
+#include <algorithm>
 #include <limits>
+
+// Parallel Processing & Math Libraries
+#include <omp.h>
 #include <Eigen/Dense>
 #include <nlopt.hpp>
-#include <csv.h> // fast-cpp-csv-parser
-#include <omp.h>
 
-// =========================================================================
-// 1. DATA STRUCTURES
-// =========================================================================
+// =============================================================================
+// Constants & Mathematical Helpers
+// =============================================================================
+constexpr double PI_CONST = 3.14159265358979323846;
+constexpr double LIKELIHOOD_PENALTY = -1e10;
 
-#ifdef NDEBUG
-
-#define DOUT if (true) {} else std::cout
-
-#else
-
-#define DOUT std::cout
-
-#endif
-
-struct Parameters {
-    double beta0;
-    double beta1;
-    double beta2;
-    double mu;
-    double phi;        // Constrained to (-1, 1)
-    double sigma_eta;  // Constrained to > 0
-};
-
-struct Data {
-    const std::vector<double>& y_returns;
-    Parameters prior_mean;
-    Parameters prior_variance;
-};
-
-// =========================================================================
-// 2. MATH UTILITIES & NUMERICALLY STABLE HELPERS
-// =========================================================================
-
-inline double log_normal_pdf(double x, double mu, double sigma) {
-    if (sigma <= 1e-15) return -std::numeric_limits<double>::infinity();
-    constexpr double log_sqrt_2pi = 0.918938533204672741780329736406;
-    double z = (x - mu) / sigma;
-    return -log_sqrt_2pi - std::log(sigma) - 0.5 * z * z;
-}
-
-// Log-Sum-Exp trick to prevent arithmetic underflow
-inline double log_sum_exp(const Eigen::VectorXd& log_v) {
-    double max_val = log_v.maxCoeff();
-    if (!std::isfinite(max_val)) return -std::numeric_limits<double>::infinity();
-    double sum = 0.0;
-    for (int i = 0; i < log_v.size(); ++i) {
-        sum += std::exp(log_v(i) - max_val);
-    }
-    return max_val + std::log(sum);
-}
-
-// EXPLICIT TRANSFORMATION: Constrained -> Unconstrained space
-std::vector<double> transformToUnconstrained(const Parameters& pConstrained) {
-    std::vector<double> pUnconstrained(6);
-    pUnconstrained[0] = pConstrained.beta0;
-    pUnconstrained[1] = pConstrained.beta1;
-    pUnconstrained[2] = pConstrained.beta2;
-    pUnconstrained[3] = pConstrained.mu;
-    // Logit transform for phi in (-1, 1)
-    double phi_std = std::clamp((pConstrained.phi + 1.0) / 2.0, 1e-15, 1.0 - 1e-15);
-    pUnconstrained[4] = std::log(phi_std / (1.0 - phi_std));
-    // Log transform for strictly positive parameter
-    pUnconstrained[5] = std::log(std::max(1e-15, pConstrained.sigma_eta));
-    return pUnconstrained;
-}
-
-// EXPLICIT TRANSFORMATION: Unconstrained -> Constrained space
-Parameters transformToConstrained(const std::vector<double>& pUnconstrained) {
-    Parameters pConstrained;
-    pConstrained.beta0 = pUnconstrained[0];
-    pConstrained.beta1 = pUnconstrained[1];
-    pConstrained.beta2 = pUnconstrained[2];
-    pConstrained.mu = pUnconstrained[3];
-    // Inverse logit transform for phi
-    double exp_phi = std::exp(pUnconstrained[4]);
-    pConstrained.phi = 2.0 * (exp_phi / (1.0 + exp_phi)) - 1.0;
-    // Inverse log transform
-    pConstrained.sigma_eta = std::exp(pUnconstrained[5]);
-    return pConstrained;
-}
-
-// Log-Jacobian determinant of the Unconstrained -> Constrained transformation
-double evaluateLogJacobian(const std::vector<double>& pUnconstrained) {
-    // d(phi)/d(u4) = 2 * exp(u4) / (1 + exp(u4))^2
-    double exp_u4 = std::exp(pUnconstrained[4]);
-    double log_jac_phi = std::log(2.0) + pUnconstrained[4] - 2.0 * std::log(1.0 + exp_u4);
-    // d(sigma_eta)/d(u5) = exp(u5)
-    double log_jac_sigma = pUnconstrained[5];
-    return log_jac_phi + log_jac_sigma;
-}
-
-double evaluateLogPrior(const Parameters& pConstrained, const Parameters& prior_mean, const Parameters& prior_variance) {
-    auto log_norm = [](double x, double mean, double var) {
-        if (var <= 0.0) return -std::numeric_limits<double>::infinity();
-        return -0.5 * std::log(2.0 * 3.141592653589793 * var) - std::pow(x - mean, 2) / (2.0 * var);
-        };
-
-    double log_p = 0.0;
-    log_p += log_norm(pConstrained.beta0, prior_mean.beta0, prior_variance.beta0);
-    log_p += log_norm(pConstrained.beta1, prior_mean.beta1, prior_variance.beta1);
-    log_p += log_norm(pConstrained.beta2, prior_mean.beta2, prior_variance.beta2);
-    log_p += log_norm(pConstrained.mu, prior_mean.mu, prior_variance.mu);
-    log_p += log_norm(pConstrained.phi, prior_mean.phi, prior_variance.phi);
-    log_p += log_norm(pConstrained.sigma_eta, prior_mean.sigma_eta, prior_variance.sigma_eta);
-    return log_p;
-}
-
-// =========================================================================
-// 3. LOG-SPACE LIKELIHOOD APPROXIMATION
-// =========================================================================
-
-
-double LikelihoodApprox(
-    int m, int std_dv_rng,
-    double beta_0, double beta_1, double beta_2,
-    double mu, double phi, double sigma_eta,
-    const std::vector<double>& y_returns)
-{
-    Eigen::VectorXd log_delta(m);
-    Eigen::VectorXd midpoints(m);
-
-    // Variance of the stationary distribution
-    double stationary_sigma = sigma_eta / std::sqrt(std::max(1e-15, 1.0 - std::pow(phi, 2)));
-    double b = (2.0 * std_dv_rng * sigma_eta) / m;
-    double log_b = std::log(b);
-
-    // 1. Parallelize initial grid evaluation (O(m))
-    #pragma omp parallel for schedule(static)
-    for (int i = 1; i <= m; i++) {
-        double midpoint = mu - std_dv_rng * sigma_eta * (1.0 - (2.0 * i - 1.0) / m);
-        midpoints(i - 1) = midpoint;
-        log_delta(i - 1) = log_normal_pdf(midpoint, mu, stationary_sigma);
+namespace MathUtils {
+    inline double norm_pdf(double x, double mean, double stddev) {
+        double diff = x - mean;
+        return (1.0 / (stddev * std::sqrt(2.0 * PI_CONST))) * std::exp(-0.5 * (diff * diff) / (stddev * stddev));
     }
 
-    log_delta.array() += log_b;
-    double log_sum_delta = log_sum_exp(log_delta);
-    log_delta.array() -= log_sum_delta;
-
-    // 2. Parallelize transition matrix construction (O(m^2))
-    Eigen::MatrixXd log_Gamma(m, m);
-    #pragma omp parallel for schedule(static)
-    for (int i = 0; i < m; i++) {
-        double conditional_mean = mu + phi * (midpoints(i) - mu);
-        for (int j = 0; j < m; j++) {
-            log_Gamma(i, j) = log_normal_pdf(midpoints(j), conditional_mean, sigma_eta) + log_b;
-        }
-        double log_row_sum = log_sum_exp(log_Gamma.row(i));
-        log_Gamma.row(i).array() -= log_row_sum;
+    inline double norm_logpdf(double x, double mean, double stddev) {
+        double diff = x - mean;
+        return -0.5 * std::log(2.0 * PI_CONST) - std::log(stddev) - 0.5 * (diff * diff) / (stddev * stddev);
     }
 
-    double log_likelihood = 0.0;
-    Eigen::VectorXd log_alpha = log_delta;
-    int T = static_cast<int>(y_returns.size());
+    inline double student_t_logpdf(double y, double mu, double sigma, double nu) {
+        double z = (y - mu) / sigma;
+        double term1 = std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0);
+        double term2 = -0.5 * std::log(PI_CONST * nu) - std::log(sigma);
+        double term3 = -((nu + 1.0) / 2.0) * std::log(1.0 + (z * z) / nu);
+        return term1 + term2 + term3;
+    }
+}
 
-    // Allocate temporary vector once outside the loop to reduce memory allocations
-    Eigen::VectorXd next_log_alpha(m);
+// =============================================================================
+// Lightweight JSON Parser and Serializer for IPC Communication
+// =============================================================================
+class SimpleJson {
+public:
+    static std::map<std::string, std::string> parse_object(const std::string& input) {
+        std::map<std::string, std::string> kv;
+        std::string s = input;
 
-    // TIME LOOP: Must remain sequential because log_alpha(t) depends on log_alpha(t-1)
-    for (int t = 0; t < T; t++) {
-        double y_curr = y_returns[t];
-        double y_prev = (t == 0) ? 0.0 : y_returns[t - 1];
+        // Remove whitespace and curly braces
+        s.erase(std::remove_if(s.begin(), s.end(), [](char c) {
+            return c == '{' || c == '}' || c == '\r' || c == '\n';
+            }), s.end());
 
-        // 3. Parallelize observation log-likelihood updates across m grid points
-        #pragma omp parallel for schedule(static)
-        for (int j = 0; j < m; j++) {
-            double h_t = midpoints(j);
-            double mean_y = beta_0 + beta_1 * y_prev + beta_2 * std::exp(h_t);
-            double std_dev_y = std::exp(h_t / 2.0);
-            log_alpha(j) += log_normal_pdf(y_curr, mean_y, std_dev_y);
-        }
+        std::stringstream ss(s);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            size_t colon_pos = item.find(':');
+            if (colon_pos != std::string::npos) {
+                std::string key = item.substr(0, colon_pos);
+                std::string val = item.substr(colon_pos + 1);
 
-        // Predictive probability normalization
-        double step_log_sum = log_sum_exp(log_alpha);
-        if (!std::isfinite(step_log_sum)) return -1e15;
+                // Trim quotes
+                key.erase(std::remove(key.begin(), key.end(), '\"'), key.end());
+                val.erase(std::remove(val.begin(), val.end(), '\"'), val.end());
 
-        log_likelihood += step_log_sum;
-        log_alpha.array() -= step_log_sum;
-
-        // 4. Parallelize transition step across grid states (O(m^2))
-        if (t < T - 1) {
-            #pragma omp parallel for schedule(static)
-            for (int j = 0; j < m; j++) {
-                // Read-only access to log_alpha and log_Gamma.col(j) is thread-safe
-                Eigen::VectorXd log_terms = log_alpha + log_Gamma.col(j);
-                next_log_alpha(j) = log_sum_exp(log_terms);
+                kv[key] = val;
             }
-            log_alpha = next_log_alpha;
+        }
+        return kv;
+    }
+
+    static std::vector<double> parse_array(const std::string& array_str) {
+        std::vector<double> result;
+        std::string s = array_str;
+        s.erase(std::remove_if(s.begin(), s.end(), [](char c) {
+            return c == '[' || c == ']' || c == ' ';
+            }), s.end());
+
+        std::stringstream ss(s);
+        std::string val;
+        while (std::getline(ss, val, ',')) {
+            if (!val.empty()) {
+                result.push_back(std::stod(val));
+            }
+        }
+        return result;
+    }
+};
+
+// =============================================================================
+// IPC Manager
+// =============================================================================
+class IPCManager {
+private:
+    bool enable_logging;
+
+public:
+    IPCManager() : enable_logging(false) {}
+
+    void set_logging(bool flag) {
+        enable_logging = flag;
+    }
+
+    bool is_logging_enabled() const {
+        return enable_logging;
+    }
+
+    void log_info(const std::string& msg) const {
+        if (enable_logging) {
+            std::cerr << "[INFO] " << msg << std::endl;
         }
     }
 
-    return log_likelihood;
-}
-
-// =========================================================================
-// 4. MAP ESTIMATION (L-BFGS & NUMERICAL DERIVATIVES)
-// =========================================================================
-
-double EvaluateLogPosterior(const std::vector<double>& pUnconstrained, Data* data) {
-    Parameters pConstrained = transformToConstrained(pUnconstrained);
-    double log_prior = evaluateLogPrior(pConstrained, data->prior_mean, data->prior_variance);
-    double log_jac = evaluateLogJacobian(pUnconstrained);
-    double log_lik = LikelihoodApprox(100, 4, pConstrained.beta0, pConstrained.beta1, pConstrained.beta2,
-        pConstrained.mu, pConstrained.phi, pConstrained.sigma_eta, data->y_returns);
-    return log_prior + log_jac + log_lik;
-}
-
-// 5-Point Central Finite Difference Gradient Approximation
-void ComputeNumericalGradient(const std::vector<double>& x, std::vector<double>& grad, Data* data) {
-    const size_t n = x.size();
-    const double eps = std::pow(std::numeric_limits<double>::epsilon(), 1.0 / 3.0);
-
-    for (size_t i = 0; i < n; ++i) {
-        double h = eps * std::max(1.0, std::abs(x[i]));
-        std::vector<double> x_p2 = x, x_p1 = x, x_m1 = x, x_m2 = x;
-        x_p2[i] += 2.0 * h;
-        x_p1[i] += h;
-        x_m1[i] -= h;
-        x_m2[i] -= 2.0 * h;
-
-        double f_p2 = -EvaluateLogPosterior(x_p2, data);
-        double f_p1 = -EvaluateLogPosterior(x_p1, data);
-        double f_m1 = -EvaluateLogPosterior(x_m1, data);
-        double f_m2 = -EvaluateLogPosterior(x_m2, data);
-
-        grad[i] = (-f_p2 + 8.0 * f_p1 - 8.0 * f_m1 + f_m2) / (12.0 * h);
+    void log_warn(const std::string& msg) const {
+        if (enable_logging) {
+            std::cerr << "[WARN] " << msg << std::endl;
+        }
     }
-}
 
-// Objective Function compatible with NLopt L-BFGS
-double NLLObjectiveFunc(const std::vector<double>& paramsUnconstrained, std::vector<double>& grad, void* my_func_data) {
-    Data* data = static_cast<Data*>(my_func_data);
-    if (!grad.empty()) {
-        ComputeNumericalGradient(paramsUnconstrained, grad, data);
+    void log_error(const std::string& msg) const {
+        // Errors are sent to stderr regardless of logging status
+        std::cerr << "[ERROR] " << msg << std::endl;
     }
-    double total_log_posterior = EvaluateLogPosterior(paramsUnconstrained, data);
-	DOUT <<  "NLLObjectiveFunc ran successfully: " << -total_log_posterior << std::endl;
-    DOUT <<  "Params: ";
-    for (double p : paramsUnconstrained) { DOUT <<  p << ", "; }
-    DOUT <<  std::endl;
-    return -total_log_posterior; // Minimizing Negative Log Posterior
-}
 
-// Compute Hessian of Negative Log-Posterior via Central Differences
-Eigen::MatrixXd ComputeHessian(const std::vector<double>& x, Data* data) {
-    const size_t n = x.size();
-    const double eps = std::pow(std::numeric_limits<double>::epsilon(), 1.0 / 4.0);
-    Eigen::MatrixXd Hessian(n, n);
-    double f_0 = -EvaluateLogPosterior(x, data);
+    void send_response(const std::string& json_payload) const {
+        std::cout << json_payload << std::endl;
+    }
 
-    for (size_t i = 0; i < n; ++i) {
-        double h_i = eps * std::max(1.0, std::abs(x[i]));
-        for (size_t j = i; j < n; ++j) {
-            double h_j = eps * std::max(1.0, std::abs(x[j]));
+    void send_failure(const std::string& error_message) const {
+        std::stringstream ss;
+        ss << "{"
+            << "\"status\":\"error\","
+            << "\"message\":\"" << error_message << "\""
+            << "}";
+        std::cout << ss.str() << std::endl;
+    }
+};
 
-            if (i == j) {
-                std::vector<double> x_p = x, x_m = x;
-                x_p[i] += h_i;
-                x_m[i] -= h_i;
-                double f_p = -EvaluateLogPosterior(x_p, data);
-                double f_m = -EvaluateLogPosterior(x_m, data);
-                Hessian(i, i) = (f_p - 2.0 * f_0 + f_m) / (h_i * h_i);
+// =============================================================================
+// Configurations and Parameters Data Structs
+// =============================================================================
+struct Hyperparameters {
+    int m = 100;
+    double b_limit = 5.0;
+    int is_samples = 2000;
+    double nu_min = 2.0;
+    double nu_max = 40.0;
+};
+
+struct PriorConfig {
+    Eigen::VectorXd mu_0;
+    Eigen::VectorXd sigma_0;
+
+    PriorConfig() {
+        mu_0.resize(7);
+        sigma_0.resize(7);
+        mu_0 << 0.0, 0.0, 0.0, 0.0, 3.0, -1.0, 0.0;
+        sigma_0 << 10.0, 3.16, 10.0, 10.0, 1.0, 1.0, 10.0;
+    }
+};
+
+struct EstimationResult {
+    Eigen::VectorXd map_estimate_unc;
+    std::map<std::string, double> map_estimate_con;
+    Eigen::MatrixXd inv_hessian;
+    std::map<std::string, double> posterior_mean_con;
+    bool success;
+    std::string message;
+};
+
+// =============================================================================
+// Parameter Transformation Module
+// =============================================================================
+class ParameterTransformer {
+private:
+    double nu_min, nu_max, nu_a, nu_c;
+
+public:
+    ParameterTransformer(double min_nu = 2.0, double max_nu = 40.0)
+        : nu_min(min_nu), nu_max(max_nu) {
+        nu_a = (nu_max - nu_min) / 2.0;
+        nu_c = (nu_max + nu_min) / 2.0;
+    }
+
+    Eigen::VectorXd to_constrained(const Eigen::VectorXd& theta_u) const {
+        Eigen::VectorXd theta_c(7);
+        double beta0 = theta_u(0);
+        double gamma = theta_u(1);
+        double beta2 = theta_u(2);
+        double mu = theta_u(3);
+        double psi = theta_u(4);
+        double omega = theta_u(5);
+        double xi = theta_u(6);
+
+        double beta1 = std::tanh(gamma / 2.0);
+        double phi = std::tanh(psi / 2.0);
+        double sigma_eta = std::exp(omega);
+        double nu = nu_a * std::tanh(xi) + nu_c;
+
+        theta_c << beta0, beta1, beta2, mu, phi, sigma_eta, nu;
+        return theta_c;
+    }
+
+    std::map<std::string, double> to_dict(const Eigen::VectorXd& theta_c) const {
+        return {
+            {"beta0", theta_c(0)}, {"beta1", theta_c(1)}, {"beta2", theta_c(2)},
+            {"mu", theta_c(3)},    {"phi", theta_c(4)},   {"sigma_eta", theta_c(5)},
+            {"nu", theta_c(6)}
+        };
+    }
+};
+
+// =============================================================================
+// Fast Bayesian SVM Estimator Core Class
+// =============================================================================
+class FastBayesianSVMEstimator {
+public:
+    using LogPDFDensityFunc = std::function<double(double, double, double, double)>;
+
+private:
+    Eigen::VectorXd y;
+    int T;
+    Hyperparameters hp;
+    PriorConfig priors;
+    ParameterTransformer transformer;
+    LogPDFDensityFunc smn_logpdf;
+    IPCManager& ipc;
+
+    Eigen::VectorXd b_grid;
+    double delta_b;
+
+    void build_hmm_matrices(const Eigen::VectorXd& theta_c, Eigen::MatrixXd& Gamma, Eigen::VectorXd& delta) const {
+        double mu = theta_c(3);
+        double phi = theta_c(4);
+        double sigma_eta = theta_c(5);
+
+        int m = hp.m;
+        Gamma.resize(m, m);
+
+        // Transition Matrix Parallelization
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < m; ++i) {
+            for (int j = 0; j < m; ++j) {
+                double mean_j = mu + phi * (b_grid(i) - mu);
+                Gamma(i, j) = MathUtils::norm_pdf(b_grid(j), mean_j, sigma_eta) * delta_b;
+            }
+        }
+
+        // Numerical resilience: Normalize rows
+        for (int i = 0; i < m; ++i) {
+            double row_sum = Gamma.row(i).sum();
+            if (row_sum <= 0.0 || std::isnan(row_sum)) {
+                Gamma.row(i).setConstant(1.0 / m);
             }
             else {
-                std::vector<double> x_pp = x, x_pm = x, x_mp = x, x_mm = x;
-                x_pp[i] += h_i; x_pp[j] += h_j;
-                x_pm[i] += h_i; x_pm[j] -= h_j;
-                x_mp[i] -= h_i; x_mp[j] += h_j;
-                x_mm[i] -= h_i; x_mm[j] -= h_j;
-
-                double f_pp = -EvaluateLogPosterior(x_pp, data);
-                double f_pm = -EvaluateLogPosterior(x_pm, data);
-                double f_mp = -EvaluateLogPosterior(x_mp, data);
-                double f_mm = -EvaluateLogPosterior(x_mm, data);
-
-                double d2f = (f_pp - f_pm - f_mp + f_mm) / (4.0 * h_i * h_j);
-                Hessian(i, j) = d2f;
-                Hessian(j, i) = d2f; // Ensure symmetry
+                Gamma.row(i) /= row_sum;
             }
         }
-    }
-    // Symmetrize explicitly
-    Hessian = 0.5 * (Hessian + Hessian.transpose());
-    return Hessian;
-}
 
-std::vector<double> EstimateMAP(const Parameters& initial_guess, Data& data) {
-    nlopt::opt opt(nlopt::LN_BOBYQA, 6);
-    opt.set_min_objective(NLLObjectiveFunc, &data);
-    opt.set_xtol_rel(1e-3);
-    opt.set_ftol_rel(1e-3);
-    opt.set_maxeval(500);
+        // Initial Distribution
+        double stat_var = (sigma_eta * sigma_eta) / (1.0 - phi * phi + 1e-12);
+        double stat_std = std::sqrt(stat_var);
 
-    std::vector<double> x = transformToUnconstrained(initial_guess);
-    double min_nll;
-
-    DOUT <<  "Starting L-BFGS Optimization..." << std::endl;
-    nlopt::result result = opt.optimize(x, min_nll);
-    DOUT <<  "Optimization converged (Code: " << result << "). Min NLL: " << min_nll << std::endl;
-
-    return x;
-}
-
-// =========================================================================
-// 5. POSTERIOR ESTIMATION (IMPORTANCE SAMPLING)
-// =========================================================================
-
-double evaluateLogProposal(const Eigen::VectorXd& theta_tilde,
-    const Eigen::VectorXd& map_mean,
-    const Eigen::MatrixXd& cov_inv,
-    double log_det_cov) {
-    Eigen::VectorXd diff = theta_tilde - map_mean;
-    double quad_form = diff.transpose() * cov_inv * diff;
-    return -0.5 * (6.0 * std::log(2.0 * 3.141592653589793) + log_det_cov + quad_form);
-}
-
-Parameters estimatePosteriorMean(const std::vector<double>& y_returns,
-    const std::vector<double>& map_tilde_peak,
-    const Eigen::MatrixXd& covariance_matrix,
-    const Parameters& prior_mean,
-    const Parameters& prior_variance,
-    int N_samples = 1000)
-{
-    std::mt19937_64 rng(42);
-
-    // Cholesky decomposition of Sigma to sample multivariate normals
-    Eigen::LLT<Eigen::MatrixXd> lltOfCov(covariance_matrix);
-    if (lltOfCov.info() == Eigen::NumericalIssue) {
-        throw std::runtime_error("Covariance matrix is not positive-definite!");
-    }
-    Eigen::MatrixXd L = lltOfCov.matrixL();
-    Eigen::MatrixXd cov_inv = covariance_matrix.inverse();
-    double log_det_cov = 2.0 * L.diagonal().array().log().sum();
-
-    Eigen::VectorXd map_mean_vec = Eigen::Map<const Eigen::VectorXd>(map_tilde_peak.data(), 6);
-
-    std::vector<Parameters> sampled_params(N_samples);
-    Eigen::VectorXd log_weights(N_samples);
-
-    DOUT <<  "Starting Multivariate Importance Sampling (N = " << N_samples << ")...\n";
-
-    int valid_samples = 0;
-    for (int i = 0; i < N_samples; ++i) {
-        Eigen::VectorXd z(6);
-        for (int k = 0; k < 6; ++k) {
-            std::normal_distribution<double> std_norm(0.0, 1.0);
-            z(k) = std_norm(rng);
-        }
-        Eigen::VectorXd theta_tilde_i = map_mean_vec + L * z;
-
-        std::vector<double> theta_tilde_vec(theta_tilde_i.data(), theta_tilde_i.data() + 6);
-        Parameters pConstrained_i = transformToConstrained(theta_tilde_vec);
-        sampled_params[i] = pConstrained_i;
-
-        // 1. Guard against unconstrained parameter explosions before likelihood evaluation
-        if (!std::isfinite(pConstrained_i.sigma_eta) || pConstrained_i.sigma_eta <= 1e-6 ||
-            !std::isfinite(pConstrained_i.phi) || std::abs(pConstrained_i.phi) >= 0.999)
-        {
-            log_weights(i) = -1e308; // Assign virtually zero weight to invalid samples
-            continue;
+        delta.resize(m);
+        for (int i = 0; i < m; ++i) {
+            delta(i) = MathUtils::norm_pdf(b_grid(i), mu, stat_std) * delta_b;
         }
 
-        double log_lik = LikelihoodApprox(100, 4, pConstrained_i.beta0, pConstrained_i.beta1,
-            pConstrained_i.beta2, pConstrained_i.mu,
-            pConstrained_i.phi, pConstrained_i.sigma_eta, y_returns);
-
-        // 2. Reject penalty score (-1e15) from ruining LogSumExp
-        if (log_lik <= -1e14 || !std::isfinite(log_lik)) {
-            log_weights(i) = -1e308;
-            continue;
-        }
-
-        double log_prior = evaluateLogPrior(pConstrained_i, prior_mean, prior_variance);
-        double log_jac = evaluateLogJacobian(theta_tilde_vec);
-        double log_prop = evaluateLogProposal(theta_tilde_i, map_mean_vec, cov_inv, log_det_cov);
-
-        double w = (log_lik + log_prior + log_jac) - log_prop;
-
-        if (std::isfinite(w)) {
-            log_weights(i) = w;
-            valid_samples++;
+        double delta_sum = delta.sum();
+        if (delta_sum <= 0.0 || std::isnan(delta_sum)) {
+            delta.setConstant(1.0 / m);
         }
         else {
-            log_weights(i) = -1e308;
+            delta /= delta_sum;
         }
     }
 
-    if (valid_samples == 0) {
-        throw std::runtime_error("Importance Sampling failed: All sampled proposal points evaluated to invalid likelihoods!");
-    }
+public:
+    FastBayesianSVMEstimator(const Eigen::VectorXd& data,
+        LogPDFDensityFunc density_fn,
+        IPCManager& ipc_ref,
+        Hyperparameters hyperparams = Hyperparameters(),
+        PriorConfig prior_config = PriorConfig())
+        : y(data), T(static_cast<int>(data.size())), smn_logpdf(density_fn),
+        ipc(ipc_ref), hp(hyperparams), priors(prior_config),
+        transformer(hyperparams.nu_min, hyperparams.nu_max) {
 
-    // Stable weight normalization via Log-Sum-Exp
-    double log_sum_w = log_sum_exp(log_weights);
-    Eigen::VectorXd norm_weights = (log_weights.array() - log_sum_w).exp();
-
-    // Diagnostic: Compute Effective Sample Size (ESS)
-    double ess = 1.0 / norm_weights.array().square().sum();
-    DOUT <<  "Importance Sampling complete. Valid points: " << valid_samples
-        << "/" << N_samples << " | ESS: " << ess << "\n";
-
-    // 3. Compute weighted point estimate using uniform Eigen accessor syntax ()
-    Parameters point_estimate = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-    for (int i = 0; i < N_samples; ++i) {
-        // Skip zero-weight invalid proposals
-        if (norm_weights(i) <= 0.0 || !std::isfinite(norm_weights(i))) continue;
-
-        point_estimate.beta0 += norm_weights(i) * sampled_params[i].beta0;
-        point_estimate.beta1 += norm_weights(i) * sampled_params[i].beta1;
-        point_estimate.beta2 += norm_weights(i) * sampled_params[i].beta2; // Fixed [] -> ()
-        point_estimate.mu += norm_weights(i) * sampled_params[i].mu;
-        point_estimate.phi += norm_weights(i) * sampled_params[i].phi;
-        point_estimate.sigma_eta += norm_weights(i) * sampled_params[i].sigma_eta;
-    }
-
-    return point_estimate;
-}
-
-// =========================================================================
-// 6. MAIN ROUTINE
-// =========================================================================
-
-void ReadCSVData(std::vector<double>& y_returns) {
-    try {
-        io::CSVReader<2> in("../data/gold18_history_log_returns.csv");
-        in.read_header(io::ignore_extra_column, "", "Log_Return");
-        double x; double ret;
-        while (in.read_row(x, ret)) {
-            y_returns.push_back(ret);
+        b_grid.resize(hp.m);
+        double step = (2.0 * hp.b_limit) / (hp.m - 1);
+        for (int i = 0; i < hp.m; ++i) {
+            b_grid(i) = -hp.b_limit + i * step;
         }
+        delta_b = step;
     }
-    catch (const std::exception& e) {
-        throw std::runtime_error("Failed to read CSV: " + std::string(e.what()));
+
+    double log_likelihood(const Eigen::VectorXd& theta_u) const {
+        Eigen::VectorXd theta_c = transformer.to_constrained(theta_u);
+        double beta0 = theta_c(0);
+        double beta1 = theta_c(1);
+        double beta2 = theta_c(2);
+        double nu = theta_c(6);
+
+        Eigen::MatrixXd Gamma;
+        Eigen::VectorXd alpha;
+        build_hmm_matrices(theta_c, Gamma, alpha);
+
+        double log_L = 0.0;
+        Eigen::VectorXd sigmas = (b_grid.array() * 0.5).exp();
+        Eigen::VectorXd exp_b = b_grid.array().exp();
+
+        Eigen::VectorXd obs_probs(hp.m);
+        Eigen::VectorXd log_obs_probs(hp.m);
+
+        for (int t = 1; t < T; ++t) {
+            double y_t = y(t);
+            double y_t_1 = y(t - 1);
+
+            for (int i = 0; i < hp.m; ++i) {
+                double mus_i = beta0 + beta1 * y_t_1 + beta2 * exp_b(i);
+                log_obs_probs(i) = smn_logpdf(y_t, mus_i, sigmas(i), nu);
+            }
+
+            // Prevent catastrophic underflow using scaling factor shift
+            double max_log = log_obs_probs.maxCoeff();
+            obs_probs = (log_obs_probs.array() - max_log).exp();
+
+            // Forward Step: alpha_t = (alpha_{t-1} * Gamma) \odot P(y_t)
+            alpha = (alpha.transpose() * Gamma).array() * obs_probs.array();
+
+            // Scaling Step
+            double c_t = alpha.sum();
+            if (c_t <= 0.0 || std::isnan(c_t)) {
+                return LIKELIHOOD_PENALTY;
+            }
+
+            alpha /= c_t;
+            log_L += std::log(c_t) + max_log;
+        }
+
+        return log_L;
     }
-}
 
-void ReadDataSTDIN(std::vector<double>& y_returns) {
-    size_t n;
-    std::cin >> n;
-
-    y_returns.reserve(n);
-
-    for (size_t i = 0; i < n; ++i)
-    {
-        double x;
-        if (!(std::cin >> x))
-            throw std::runtime_error("Unexpected end of input.");
-
-        y_returns.push_back(x);
+    double log_prior(const Eigen::VectorXd& theta_u) const {
+        double lp = 0.0;
+        for (int i = 0; i < 7; ++i) {
+            lp += MathUtils::norm_logpdf(theta_u(i), priors.mu_0(i), priors.sigma_0(i));
+        }
+        return lp;
     }
-}
 
-void LoadData(std::vector<double>& y_returns) {
-#if NDEBUG
-    return ReadDataSTDIN(y_returns);
-#else
-    return ReadCSVData(y_returns);
-#endif // NDEBUG
-}
+    double negative_log_posterior(const Eigen::VectorXd& theta_u) const {
+        double ll = log_likelihood(theta_u);
+        if (ll <= LIKELIHOOD_PENALTY) {
+            return -LIKELIHOOD_PENALTY;
+        }
+        return -(ll + log_prior(theta_u));
+    }
 
+    // Static NLopt Objective Function Wrapper
+    static double nlopt_objective(const std::vector<double>& x, std::vector<double>& grad, void* func_data) {
+        FastBayesianSVMEstimator* estimator = static_cast<FastBayesianSVMEstimator*>(func_data);
+        Eigen::VectorXd theta_u = Eigen::Map<const Eigen::VectorXd>(x.data(), x.size());
+
+        double obj = estimator->negative_log_posterior(theta_u);
+
+        // Finite-difference gradient computation if required by solver
+        if (!grad.empty()) {
+            double eps = 1e-5;
+            for (size_t i = 0; i < x.size(); ++i) {
+                Eigen::VectorXd theta_plus = theta_u;
+                Eigen::VectorXd theta_minus = theta_u;
+                theta_plus(i) += eps;
+                theta_minus(i) -= eps;
+
+                double obj_plus = estimator->negative_log_posterior(theta_plus);
+                double obj_minus = estimator->negative_log_posterior(theta_minus);
+                grad[i] = (obj_plus - obj_minus) / (2.0 * eps);
+            }
+        }
+        return obj;
+    }
+
+    Eigen::MatrixXd ensure_positive_definite(const Eigen::MatrixXd& mat, double epsilon = 1e-6) const {
+        Eigen::MatrixXd result = mat;
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(result);
+        if (es.info() != Eigen::Success || es.eigenvalues().minCoeff() <= 0.0) {
+            ipc.log_warn("Matrix is not positive definite. Applying diagonal ridge regularization.");
+            double min_eig = es.eigenvalues().minCoeff();
+            double add_diag = (std::abs(min_eig) + epsilon);
+            result += add_diag * Eigen::MatrixXd::Identity(mat.rows(), mat.cols());
+        }
+        return result;
+    }
+
+    EstimationResult estimate(const std::vector<double>& init_theta) {
+        ipc.log_info("Starting L-BFGS Optimization via NLopt...");
+
+        nlopt::opt opt(nlopt::LD_LBFGS, 7); // Low-storage BFGS derivative-free mode
+        opt.set_min_objective(FastBayesianSVMEstimator::nlopt_objective, this);
+        opt.set_ftol_rel(1e-6);
+        opt.set_maxeval(1000);
+
+        std::vector<double> x = init_theta;
+        double min_f;
+
+        bool success = true;
+        std::string msg = "Optimization converged successfully.";
+
+        try {
+            nlopt::result status = opt.optimize(x, min_f);
+            ipc.log_info("NLopt completed with code: " + std::to_string(status));
+        }
+        catch (const std::exception& e) {
+            success = false;
+            msg = std::string("NLopt Exception: ") + e.what();
+            ipc.log_warn(msg);
+        }
+
+        Eigen::VectorXd map_u = Eigen::Map<Eigen::VectorXd>(x.data(), 7);
+
+        // Compute Numerical Hessian
+        ipc.log_info("Computing Numerical Hessian at MAP mode...");
+        Eigen::MatrixXd hessian = Eigen::MatrixXd::Zero(7, 7);
+        double eps = 1e-4;
+
+        for (int i = 0; i < 7; ++i) {
+            for (int j = 0; j < 7; ++j) {
+                Eigen::VectorXd p_ij = map_u, p_i = map_u, p_j = map_u, p_base = map_u;
+                p_ij(i) += eps; p_ij(j) += eps;
+                p_i(i) += eps;
+                p_j(j) += eps;
+
+                double f_ij = negative_log_posterior(p_ij);
+                double f_i = negative_log_posterior(p_i);
+                double f_j = negative_log_posterior(p_j);
+                double f_base = negative_log_posterior(p_base);
+
+                hessian(i, j) = (f_ij - f_i - f_j + f_base) / (eps * eps);
+            }
+        }
+
+        Eigen::MatrixXd inv_hessian;
+        Eigen::FullPivLU<Eigen::MatrixXd> lu(hessian);
+        if (lu.isInvertible()) {
+            inv_hessian = lu.inverse();
+        }
+        else {
+            ipc.log_warn("Hessian matrix inversion failed. Falling back to spherical scaling.");
+            inv_hessian = Eigen::MatrixXd::Identity(7, 7) * 1e-3;
+        }
+
+        inv_hessian = ensure_positive_definite(inv_hessian);
+
+        // Importance Sampling
+        ipc.log_info("Executing multi-threaded Importance Sampling (" + std::to_string(hp.is_samples) + " samples)...");
+
+        Eigen::LLT<Eigen::MatrixXd> llt(inv_hessian);
+        Eigen::MatrixXd L = llt.matrixL();
+
+        Eigen::VectorXd log_weights(hp.is_samples);
+        Eigen::MatrixXd samples_c(hp.is_samples, 7);
+
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            std::mt19937_64 rng(1337 + tid * 10007);
+            std::normal_distribution<double> norm_dist(0.0, 1.0);
+
+#pragma omp for schedule(dynamic)
+            for (int i = 0; i < hp.is_samples; ++i) {
+                Eigen::VectorXd z(7);
+                for (int d = 0; d < 7; ++d) {
+                    z(d) = norm_dist(rng);
+                }
+
+                Eigen::VectorXd sample_u = map_u + L * z;
+                samples_c.row(i) = transformer.to_constrained(sample_u).transpose();
+
+                double log_p = -negative_log_posterior(sample_u);
+
+                // Normal logpdf of proposal q(theta)
+                Eigen::VectorXd diff = sample_u - map_u;
+                double log_q = -0.5 * 7 * std::log(2.0 * PI_CONST)
+                    - 0.5 * std::log(inv_hessian.determinant())
+                    - 0.5 * static_cast<double>(diff.transpose() * inv_hessian.inverse() * diff);
+
+                log_weights(i) = log_p - log_q;
+            }
+        }
+
+        // Log-Sum-Exp Trick for Weight Normalization
+        double max_log_w = log_weights.maxCoeff();
+        Eigen::VectorXd weights = (log_weights.array() - max_log_w).exp();
+        double w_sum = weights.sum();
+
+        if (w_sum > 0.0) {
+            weights /= w_sum;
+        }
+        else {
+            ipc.log_warn("Importance weights collapsed. Assigning uniform weights.");
+            weights.setConstant(1.0 / hp.is_samples);
+        }
+
+        // Posterior Means calculation
+        Eigen::VectorXd posterior_mean_vec = Eigen::VectorXd::Zero(7);
+        for (int i = 0; i < hp.is_samples; ++i) {
+            posterior_mean_vec += weights(i) * samples_c.row(i).transpose();
+        }
+
+        EstimationResult res;
+        res.map_estimate_unc = map_u;
+        res.map_estimate_con = transformer.to_dict(transformer.to_constrained(map_u));
+        res.inv_hessian = inv_hessian;
+        res.posterior_mean_con = transformer.to_dict(posterior_mean_vec);
+        res.success = success;
+        res.message = msg;
+
+        return res;
+    }
+};
+
+// =============================================================================
+// Application Entry Point
+// =============================================================================
 int main() {
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(NULL);
+
+    IPCManager ipc;
+
     try {
-        std::vector<double> y_returns;
-        LoadData(y_returns);
-        if (y_returns.empty()) {
-            throw std::runtime_error("No data loaded from CSV.");
+        // Parse input standard stream (IPC JSON Payload)
+        std::string raw_input;
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            raw_input += line;
         }
 
-        Parameters initial_guess = { 0.0, 0.0, 0.0, 1.0, 0.6, 0.8 };
-        Parameters prior_mean = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.5 };
-        Parameters prior_variance = { 1.0, 1.0, 1.0, 4.0, 0.25, 0.25 };
-
-        Data modeling_data = { y_returns, prior_mean, prior_variance };
-
-        // Step 1: Estimate MAP via L-BFGS
-        DOUT <<  "--- Starting MAP Estimation (L-BFGS) ---\n";
-        std::vector<double> map_tilde_peak = EstimateMAP(initial_guess, modeling_data);
-
-       
-        // Step 2: Compute Symmetric Hessian at MAP Peak
-        DOUT <<  "\n--- Computing Finite Difference Hessian ---\n";
-        Eigen::MatrixXd Hessian = ComputeHessian(map_tilde_peak, &modeling_data);
-
-        DOUT <<  "Final Hessian: \n" << Hessian << std::endl;
-
-        // Regularize Hessian to prevent inversion failure due to numerical drift
-        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Hessian);
-        Eigen::VectorXd eigenvalues = es.eigenvalues();
-        Eigen::MatrixXd eigenvectors = es.eigenvectors();
-        for (int i = 0; i < eigenvalues.size(); ++i) {
-            if (eigenvalues(i) < 1e-8) eigenvalues(i) = 1e-8; // Ensure positive definiteness
+        if (raw_input.empty()) {
+            ipc.send_failure("Input stdin payload was empty.");
+            return 1;
         }
-        Eigen::MatrixXd reg_Hessian = eigenvectors * eigenvalues.asDiagonal() * eigenvectors.transpose();
-        Eigen::MatrixXd covariance_matrix = reg_Hessian.inverse();
-		DOUT <<  "Final Covariance Matrix (Inverse Hessian):\n" << covariance_matrix << std::endl;
 
-        // Step 3: Estimate Posterior Means via Multivariate Importance Sampling
-        Parameters final_theta_bayes = estimatePosteriorMean(
-            y_returns, map_tilde_peak, covariance_matrix, prior_mean, prior_variance, 1000
+        auto payload = SimpleJson::parse_object(raw_input);
+
+        // Configure IPC logging flag
+        if (payload.find("enable_logging") != payload.end()) {
+            ipc.set_logging(payload["enable_logging"] == "true" || payload["enable_logging"] == "1");
+        }
+
+        ipc.log_info("Native Fast Bayesian SVM C++ Engine Initialized.");
+
+        // Data array extraction
+        if (payload.find("y") == payload.end()) {
+            ipc.send_failure("Missing mandatory parameter 'y' in JSON payload.");
+            return 1;
+        }
+
+        std::vector<double> y_vec = SimpleJson::parse_array(payload["y"]);
+        Eigen::VectorXd y_data = Eigen::Map<Eigen::VectorXd>(y_vec.data(), y_vec.size());
+
+        // Construct Configurations
+        Hyperparameters hp;
+        if (payload.find("m") != payload.end()) hp.m = std::stoi(payload["m"]);
+        if (payload.find("b_limit") != payload.end()) hp.b_limit = std::stod(payload["b_limit"]);
+        if (payload.find("is_samples") != payload.end()) hp.is_samples = std::stoi(payload["is_samples"]);
+
+        PriorConfig priors;
+        if (payload.find("mu_0") != payload.end()) {
+            std::vector<double> mu_vec = SimpleJson::parse_array(payload["mu_0"]);
+            if (mu_vec.size() == 7) priors.mu_0 = Eigen::Map<Eigen::VectorXd>(mu_vec.data(), 7);
+        }
+
+        // Initialize Engine with Student-t LogPDF
+        FastBayesianSVMEstimator estimator(
+            y_data,
+            MathUtils::student_t_logpdf,
+            ipc,
+            hp,
+            priors
         );
 
-        // Step 4: Output Estimated Parameters
-        DOUT <<  std::fixed << std::setprecision(10);
-        DOUT <<  "\n--- Final Estimated Point Parameters (Posterior Means) ---\n";
-        DOUT <<  "beta0:     " << final_theta_bayes.beta0 << "\n";
-        DOUT <<  "beta1:     " << final_theta_bayes.beta1 << "\n";
-        DOUT <<  "beta2:     " << final_theta_bayes.beta2 << "\n";
-        DOUT <<  "mu:        " << final_theta_bayes.mu << "\n";
-        DOUT <<  "phi:       " << final_theta_bayes.phi << "\n";
-        DOUT <<  "sigma_eta: " << final_theta_bayes.sigma_eta << "\n";
+        std::vector<double> init_theta = { 0.0, 0.0, 0.0, 0.0, 3.0, -1.0, 0.0 };
+        EstimationResult result = estimator.estimate(init_theta);
 
-        std::cout << final_theta_bayes.beta0 << "\n";
-        std::cout << final_theta_bayes.beta1 << "\n";
-        std::cout << final_theta_bayes.beta2 << "\n";
-        std::cout << final_theta_bayes.mu << "\n";
-        std::cout << final_theta_bayes.phi << "\n";
-        std::cout << final_theta_bayes.sigma_eta;
+        // Serialize output JSON response
+        std::stringstream ss;
+        ss << std::setprecision(8);
+        ss << "{"
+            << "\"status\":\"" << (result.success ? "success" : "failed") << "\","
+            << "\"message\":\"" << result.message << "\","
+            << "\"posterior_mean_con\":{";
+
+        size_t idx = 0;
+        for (const auto& [param, val] : result.posterior_mean_con) {
+            ss << "\"" << param << "\":" << val;
+            if (++idx < result.posterior_mean_con.size()) ss << ",";
+        }
+        ss << "},";
+
+        ss << "\"map_estimate_con\":{";
+        idx = 0;
+        for (const auto& [param, val] : result.map_estimate_con) {
+            ss << "\"" << param << "\":" << val;
+            if (++idx < result.map_estimate_con.size()) ss << ",";
+        }
+        ss << "}";
+
+        ss << "}";
+
+        ipc.send_response(ss.str());
+
     }
-    catch (const std::exception& e) {
-        std::cerr << "Fatal Error in Execution: " << e.what() << std::endl;
-        return -1;
+    catch (const std::exception& ex) {
+        ipc.log_error(std::string("Fatal Engine Exception: ") + ex.what());
+        ipc.send_failure(ex.what());
+        return 1;
     }
 
     return 0;
