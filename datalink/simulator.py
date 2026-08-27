@@ -20,12 +20,12 @@ def generate_synthetic_log_returns(params: SVMParameters, y_0=0.0, n=300):
         # Store current log-volatility h_t
         h_states[t] = h_current
         
-        # Calculate return y_t = beta_0 + beta_1 * y_{t-1} + beta_2 * exp(h_t) + exp(h_t / 2) * eps_t
+        # Calculate return y_t = beta0 + beta1 * y_{t-1} + beta2 * exp(h_t) + exp(h_t / 2) * eps_t
         exp_h = np.exp(h_current)
         y_t = (
-            params.beta_0
-            + params.beta_1 * y_current
-            + params.beta_2 * exp_h
+            params.beta0
+            + params.beta1 * y_current
+            + params.beta2 * exp_h
             + np.sqrt(exp_h) * eps[t]
         )
         y_returns[t] = y_t
