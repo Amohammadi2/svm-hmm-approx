@@ -25,6 +25,10 @@ class ModelParameters:
             raise ValueError(
                 f"phi must lie in (-1.0, 1.0) for stationarity, got {self.phi}"
             )
+        if not (-1.0 < self.beta_1 < 1.0):
+            raise ValueError(
+                f"beta_1 must lie in (-1.0, 1.0), got {self.beta_1}"
+            )
 
     @classmethod
     def from_list(cls, params: List[float]) -> "ModelParameters":
