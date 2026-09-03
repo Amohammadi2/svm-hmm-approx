@@ -15,8 +15,14 @@ if parentdir not in sys.path:
 
 from datalink.scraper import TGJUScraper
 from datalink.processor import calculate_tgju_log_returns
+from datalink import params_cache as pc
 from utils.datastructs import SVMParameters
 from inference.estimator import Hyperparameters, FastBayesianSVMEstimator
+from inference.var_calculator import (
+    create_var_calculator,
+)
+from utils.presentation import create_var_violation_plot
+
 
 st.set_page_config(
     page_title="VaR Dashboard",
@@ -81,9 +87,14 @@ def student_t_logpdf(y: float, mu: np.ndarray, sigma: np.ndarray, nu: float) -> 
     # Using scipy stats, passing arrays for vectorized operations over the grid
     return stats.t.logpdf(y, df=nu, loc=mu, scale=sigma)
 
-if st.button("Fit Parameters", type="primary"):
+c1, c2, c3 = st.columns(3)
+
+if c1.button("Fit Parameters", type="primary", width="stretch"):
     log_returns = st.session_state.raw_data.pipe(calculate_tgju_log_returns)
     log_returns_np = log_returns['Log_Return'].dropna().to_numpy()
+
+    st.session_state.log_returns = log_returns
+    st.session_state.log_returns_np = log_returns_np
 
         # 1. Define the SMN log-density function (e.g., Student-t distribution)
 
@@ -114,9 +125,30 @@ if st.button("Fit Parameters", type="primary"):
         st.session_state.mu = params.mu
         st.session_state.phi = params.phi
         st.session_state.sigma_eta = params.sigma_eta
+        st.session_state.nu = params.nu
+        st.session_state.params = params
+
+        pc.save_params_to_cache(params)
 
         st.rerun()
         st.success("Successfully estimated the params")
+if c2.button("Load cached params", width="stretch"):
+    if (params:=pc.load_cached_params()) is not None:
+        st.session_state.beta_0 = params.beta0
+        st.session_state.beta_1 = params.beta1
+        st.session_state.beta_2 = params.beta2
+        st.session_state.mu = params.mu
+        st.session_state.phi = params.phi
+        st.session_state.sigma_eta = params.sigma_eta
+        st.session_state.nu = params.nu
+        st.success("Loaded successfully")
+    else:
+        st.error("Cache file is empty")
+if c3.button("Save to cache", width="stretch"):
+    s = st.session_state
+    pc.save_params_to_cache(SVMParameters(s.beta_0, s.beta_1, s.beta_2, s.mu, s.phi, s.sigma_eta, s.nu))
+    st.success("Saved to cache successfully")
+
 
 beta_0: float = st.number_input(label="beta_0", key="beta_0", format="%.17g")
 beta_1: float = st.number_input(label="beta_1", key="beta_1", min_value=-1.0, max_value=1.0, format="%.17g")
@@ -124,5 +156,37 @@ beta_2: float = st.number_input(label="beta_2", key="beta_2", format="%.17g")
 mu: float = st.number_input(label="mu", key="mu", format="%.17g")
 phi: float = st.number_input(label="phi", key="phi", min_value=-1.0, max_value=1.0, format="%.17g")
 sigma_eta: float = st.number_input(label="sigma_eta", key="sigma_eta",min_value=0.0, format="%.17g")
+nu: int = st.number_input(label="nu", key="nu", min_value=1, format="%.17g")
 
 st.header("VaR Chart", divider="rainbow")
+
+alpha = st.slider("Alpha", min_value=0.01, max_value=0.2)
+
+if st.button("Render chart"):
+    # Construct the HMM-based VaR calculator.
+    calculator = create_var_calculator(
+        parameters=SVMParameters(beta_0, beta_1, beta_2, mu, phi, sigma_eta, nu),
+        model="t",
+        lower=-b_limit,
+        upper=b_limit,
+        n_states=m,
+    )
+
+    log_returns = st.session_state.log_returns
+    log_returns_np = st.session_state.log_returns_np
+
+    var_alpha_pct = calculator.calculate(
+        log_returns_np,
+        alpha=alpha,
+    )
+
+
+    dates = pd.to_datetime(log_returns["Date"].iloc[1:]).reset_index(drop=True)
+
+    st.pyplot(create_var_violation_plot(dates, log_returns_np, var_alpha_pct, shift_steps=0))
+
+    violations = log_returns_np < var_alpha_pct
+
+    violation_rate = violations[~np.isnan(var_alpha_pct)].mean()
+
+    st.markdown(f"Observed violation rate: :blue[{violation_rate:.4%}]")
