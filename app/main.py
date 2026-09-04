@@ -133,6 +133,11 @@ if c1.button("Fit Parameters", type="primary", width="stretch"):
         st.rerun()
         st.success("Successfully estimated the params")
 if c2.button("Load cached params", width="stretch"):
+    log_returns = st.session_state.raw_data.pipe(calculate_tgju_log_returns)
+    log_returns_np = log_returns['Log_Return'].dropna().to_numpy()
+
+    st.session_state.log_returns = log_returns
+    st.session_state.log_returns_np = log_returns_np
     if (params:=pc.load_cached_params()) is not None:
         st.session_state.beta_0 = params.beta0
         st.session_state.beta_1 = params.beta1
