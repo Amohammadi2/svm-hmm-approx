@@ -295,7 +295,8 @@ Raw data and fitted results are cached as inspectable files, while the full envi
 Build the Docker image from the repository root:
 
 ```bash
-docker build -t stochastic-market-var .
+$ docker build -t stochastic-market-var .
+$ docker run --rm -p 8501:8501 --shm-size=256m stochastic-market-var
 ```
 
 Then run the resulting container according to the port configuration defined by the project's Docker setup.
