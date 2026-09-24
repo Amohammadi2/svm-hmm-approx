@@ -1,6 +1,7 @@
 from pathlib import Path
 import logging
 import time
+import os
 from typing import Optional, List, Tuple
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -69,6 +70,13 @@ class TGJUScraper:
         options = FirefoxOptions()
         if self.headless:
             options.add_argument("--headless")
+
+        if os.getenv("DOCKER") == "1":
+            if not self.headless:
+                options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
 
         service = Service(GeckoDriverManager().install())
         driver = webdriver.Firefox(service=service, options=options)
