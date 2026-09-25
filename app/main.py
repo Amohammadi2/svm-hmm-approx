@@ -193,5 +193,8 @@ if st.button("Render chart"):
     violations = log_returns_np < var_alpha_pct
 
     violation_rate = violations[~np.isnan(var_alpha_pct)].mean()
-
-    st.markdown(f"Observed violation rate: :blue[{violation_rate:.4%}]")
+    col1,col2 = st.columns(2)
+    with col1:
+        st.markdown(f"Observed violation rate: :blue[{violation_rate:.4%}]")
+    with col2:
+        st.markdown(f"VaR prediction for tomorrow (log return): :{'blue' if var_alpha_pct[-1] >= 0 else 'red'}[{var_alpha_pct[-1]:.4}]")
